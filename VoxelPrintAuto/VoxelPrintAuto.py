@@ -112,6 +112,7 @@ class VoxelPrintAutoParameterNode:
 
     inputSegmentation: vtkMRMLSegmentationNode #selected segmentation
     outputFilePath: str = "" #path where G-Code will be saved
+    slicerPath: str = "" #path of bambu CLI
 
 
 #
@@ -165,9 +166,14 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         #Input setup
         self.ui.inputComboBox.setMRMLScene(slicer.mrmlScene)
         self.ui.inputComboBox.connect("currentNodeChanged(vtkMRMLNode*)", self.onInputSegmentationChanged)
-
+        
+        #slicer sellection setup
+        self.ui.slicerComboBox.connect("currentIndexChanged(int)", self.onSlicerComboBoxChanged)
+        self.setupSlicerComboBox()
+        
         # Make sure parameter node is initialized (needed for module reload)
         self.initializeParameterNode()
+        
 
     def cleanup(self) -> None:
         """Called when the application closes and the module widget is destroyed."""
@@ -263,6 +269,54 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             #update parameterNode
             if self._parameterNode:
                 self._parameterNode.outputFilePath = filePath
+                
+    def setupSlicerComboBox(self) -> None:
+        #expected path
+        defaultPaths = []
+        defaultPaths.append("/Applications/BambuStudio.app/Contents/MacOS/BambuStudio")
+        
+        #check if path exists
+        existingPaths = []
+        for path in defaultPaths:
+            if os.path.exists(path):
+                existingPaths.append(path)
+                
+        #fill combobox with existing paths
+        self.ui.slicerComboBox.clear()
+        if existingPaths:
+            #Shows "Bambu Studio" in combobox and saves path as itemData
+            self.ui.slicerComboBox.addItem("Bambu Studio", existingPaths)
+        else:
+            #placeholder with None
+            self.ui.slicerComboBox.addItem("Select Slicer…", None)
+            
+        #connect browse button
+        self.ui.slicerBrowseButton.connect("clicked(bool)", self.onBrowseSlicer)
+        
+    def onBrowseSlicer(self) -> None:
+        #open file dialog
+        filePath = QFileDialog.getSaveFileName(
+            None, 
+            "Select Slicer",
+            "",
+            "Executable files (*)"
+        )
+        
+        if filePath:
+            #clear combobox
+            self.ui.slicerComboBox.clear()
+            #add selected path to the combobox
+            self.ui.slicerComboBox.addItem("Custom File Path", filePath)
+            #update parameter node
+            if self._parameterNode:
+                self._parameterNode.slicerPath = filePath
+            
+    def onSlicerComboBoxChanged(self, index):
+        selectedPath = self.ui.slicerComboBox.itemData(index)
+        if self._parameterNode and selectedPath:
+            self._parameterNode.slicerPath = selectedPath
+        
+            
             
       
             
