@@ -2,6 +2,8 @@ import logging
 import os
 from typing import Annotated, Optional
 
+from qt import QFileDialog
+
 import vtk
 
 import slicer
@@ -14,7 +16,7 @@ from slicer.parameterNodeWrapper import (
     WithinRange,
 )
 
-from slicer import vtkMRMLScalarVolumeNode
+from slicer import vtkMRMLSegmentationNode
 
 
 #
@@ -107,21 +109,9 @@ def registerSampleData():
 
 @parameterNodeWrapper
 class VoxelPrintAutoParameterNode:
-    """
-    The parameters needed by module.
 
-    inputVolume - The volume to threshold.
-    imageThreshold - The value at which to threshold the input volume.
-    invertThreshold - If true, will invert the threshold.
-    thresholdedVolume - The output volume that will contain the thresholded volume.
-    invertedVolume - The output volume that will contain the inverted thresholded volume.
-    """
-
-    inputVolume: vtkMRMLScalarVolumeNode
-    imageThreshold: Annotated[float, WithinRange(-100, 500)] = 100
-    invertThreshold: bool = False
-    thresholdedVolume: vtkMRMLScalarVolumeNode
-    invertedVolume: vtkMRMLScalarVolumeNode
+    inputSegmentation: vtkMRMLSegmentationNode #selected segmentation
+    outputFilePath: str = "" #path where G-Code will be saved
 
 
 #
@@ -168,7 +158,13 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self.addObserver(slicer.mrmlScene, slicer.mrmlScene.EndCloseEvent, self.onSceneEndClose)
 
         # Buttons
-        self.ui.generateGcodeButton.connect("clicked(bool)", self.onGenerateGcodeButton)
+        self.ui.generateGcodeButton.connect("clicked(bool)", self.onGenerateGcodeButton) #Generate G-code button
+        self.ui.outputBrowseButton.connect("clicked()", self.onBrowseOutputPath)
+        
+        
+        #Input setup
+        self.ui.inputComboBox.setMRMLScene(slicer.mrmlScene)
+        self.ui.inputComboBox.connect("currentNodeChanged(vtkMRMLNode*)", self.onInputSegmentationChanged)
 
         # Make sure parameter node is initialized (needed for module reload)
         self.initializeParameterNode()
@@ -209,10 +205,10 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self.setParameterNode(self.logic.getParameterNode())
 
         # Select default input nodes if nothing is selected yet to save a few clicks for the user
-        if not self._parameterNode.inputVolume:
-            firstVolumeNode = slicer.mrmlScene.GetFirstNodeByClass("vtkMRMLScalarVolumeNode")
+        if not self._parameterNode.inputSegmentation:
+            firstVolumeNode = slicer.mrmlScene.GetFirstNodeByClass("vtkMRMLSegmentationNode")
             if firstVolumeNode:
-                self._parameterNode.inputVolume = firstVolumeNode
+                self._parameterNode.inputSegmentation = firstVolumeNode
 
     def setParameterNode(self, inputParameterNode: Optional[VoxelPrintAutoParameterNode]) -> None:
         """
@@ -232,7 +228,7 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             self._checkCanApply()
 
     def _checkCanApply(self, caller=None, event=None) -> None:
-        if self._parameterNode and self._parameterNode.inputVolume and self._parameterNode.thresholdedVolume:
+        if self._parameterNode and self._parameterNode.inputSegmentation and self._parameterNode.thresholdedVolume:
             self.ui.applyButton.toolTip = _("Compute output volume")
             self.ui.applyButton.enabled = True
         else:
@@ -247,7 +243,29 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             self.ui.logTextBox.append("Starting G-code generation...")
            
            #Placeholder pre slicing kod
+           
+    def onInputSegmentationChanged(self, newNode) -> None:
+        #update current selected input node
+        if self._parameterNode:
+            self._parameterNode.inputSegmentation = newNode
 
+    def onBrowseOutputPath(self) -> None:
+        #open file dialog
+        filePath = QFileDialog.getSaveFileName(
+            None, #parent widget
+            "Select output file",
+            "",
+            "G-code files (*.gcode)"
+        )
+        if filePath:
+            #write path to outputPathLineEdit 
+            self.ui.outputPathLineEdit.setText(filePath)
+            #update parameterNode
+            if self._parameterNode:
+                self._parameterNode.outputFilePath = filePath
+            
+      
+            
 
 #
 # VoxelPrintAutoLogic
@@ -272,7 +290,7 @@ class VoxelPrintAutoLogic(ScriptedLoadableModuleLogic):
         return VoxelPrintAutoParameterNode(super().getParameterNode())
 
     def process(self,
-                inputVolume: vtkMRMLScalarVolumeNode,
+                inputSegmentation: vtkMRMLSegmentationNode,
                 outputVolume: vtkMRMLScalarVolumeNode,
                 imageThreshold: float,
                 invert: bool = False,
@@ -280,14 +298,14 @@ class VoxelPrintAutoLogic(ScriptedLoadableModuleLogic):
         """
         Run the processing algorithm.
         Can be used without GUI widget.
-        :param inputVolume: volume to be thresholded
+        :param inputSegmentation: volume to be thresholded
         :param outputVolume: thresholding result
         :param imageThreshold: values above/below this threshold will be set to 0
         :param invert: if True then values above the threshold will be set to 0, otherwise values below are set to 0
         :param showResult: show output volume in slice viewers
         """
 
-        if not inputVolume or not outputVolume:
+        if not inputSegmentation or not outputVolume:
             raise ValueError("Input or output volume is invalid")
 
         import time
@@ -297,7 +315,7 @@ class VoxelPrintAutoLogic(ScriptedLoadableModuleLogic):
 
         # Compute the thresholded output volume using the "Threshold Scalar Volume" CLI module
         cliParams = {
-            "InputVolume": inputVolume.GetID(),
+            "inputSegmentation": inputSegmentation.GetID(),
             "OutputVolume": outputVolume.GetID(),
             "ThresholdValue": imageThreshold,
             "ThresholdType": "Above" if invert else "Below",
@@ -350,10 +368,10 @@ class VoxelPrintAutoTest(ScriptedLoadableModuleTest):
         import SampleData
 
         registerSampleData()
-        inputVolume = SampleData.downloadSample("VoxelPrintAuto1")
+        inputSegmentation = SampleData.downloadSample("VoxelPrintAuto1")
         self.delayDisplay("Loaded test data set")
 
-        inputScalarRange = inputVolume.GetImageData().GetScalarRange()
+        inputScalarRange = inputSegmentation.GetImageData().GetScalarRange()
         self.assertEqual(inputScalarRange[0], 0)
         self.assertEqual(inputScalarRange[1], 695)
 
@@ -365,13 +383,13 @@ class VoxelPrintAutoTest(ScriptedLoadableModuleTest):
         logic = VoxelPrintAutoLogic()
 
         # Test algorithm with non-inverted threshold
-        logic.process(inputVolume, outputVolume, threshold, True)
+        logic.process(inputSegmentation, outputVolume, threshold, True)
         outputScalarRange = outputVolume.GetImageData().GetScalarRange()
         self.assertEqual(outputScalarRange[0], inputScalarRange[0])
         self.assertEqual(outputScalarRange[1], threshold)
 
         # Test algorithm with inverted threshold
-        logic.process(inputVolume, outputVolume, threshold, False)
+        logic.process(inputSegmentation, outputVolume, threshold, False)
         outputScalarRange = outputVolume.GetImageData().GetScalarRange()
         self.assertEqual(outputScalarRange[0], inputScalarRange[0])
         self.assertEqual(outputScalarRange[1], inputScalarRange[1])
