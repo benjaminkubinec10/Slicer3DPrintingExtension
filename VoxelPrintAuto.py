@@ -1,6 +1,8 @@
 import logging
 import os
 from typing import Annotated, Optional
+import tempfile
+import subprocess
 
 from qt import QFileDialog
 
@@ -16,8 +18,7 @@ from slicer.parameterNodeWrapper import (
     WithinRange,
 )
 
-from slicer import vtkMRMLSegmentationNode
-
+from slicer import vtkMRMLSegmentationNode, vtkMRMLScalarVolumeNode
 
 #
 # VoxelPrintAuto
@@ -113,6 +114,7 @@ class VoxelPrintAutoParameterNode:
     inputSegmentation: vtkMRMLSegmentationNode #selected segmentation
     outputFilePath: str = "" #path where G-Code will be saved
     slicerPath: str = "" #path of bambu CLI
+    stlPath: str = "" #temp stl file path
 
 
 #
@@ -132,48 +134,45 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self.logic = None
         self._parameterNode = None
         self._parameterNodeGuiTag = None
+        self._defaultSlicerPath = None
 
     def setup(self) -> None:
         """Called when the user opens the module the first time and the widget is initialized."""
         ScriptedLoadableModuleWidget.setup(self)
 
         # Load widget from .ui file (created by Qt Designer).
-        # Additional widgets can be instantiated manually and added to self.layout.
         uiWidget = slicer.util.loadUI(self.resourcePath("UI/VoxelPrintAuto.ui"))
         self.layout.addWidget(uiWidget)
         self.ui = slicer.util.childWidgetVariables(uiWidget)
 
         # Set scene in MRML widgets. Make sure that in Qt designer the top-level qMRMLWidget's
-        # "mrmlSceneChanged(vtkMRMLScene*)" signal in is connected to each MRML widget's.
-        # "setMRMLScene(vtkMRMLScene*)" slot.
         uiWidget.setMRMLScene(slicer.mrmlScene)
-
+        
         # Create logic class. Logic implements all computations that should be possible to run
-        # in batch mode, without a graphical user interface.
         self.logic = VoxelPrintAutoLogic()
-
-        # Connections
 
         # These connections ensure that we update parameter node when scene is closed
         self.addObserver(slicer.mrmlScene, slicer.mrmlScene.StartCloseEvent, self.onSceneStartClose)
         self.addObserver(slicer.mrmlScene, slicer.mrmlScene.EndCloseEvent, self.onSceneEndClose)
 
-        # Buttons
+        #Connect buttons
         self.ui.generateGcodeButton.connect("clicked(bool)", self.onGenerateGcodeButton) #Generate G-code button
         self.ui.outputBrowseButton.connect("clicked()", self.onBrowseOutputPath)
         
-        
-        #Input setup
+        #Setup input segmentation comboBox
         self.ui.inputComboBox.setMRMLScene(slicer.mrmlScene)
         self.ui.inputComboBox.connect("currentNodeChanged(vtkMRMLNode*)", self.onInputSegmentationChanged)
         
-        #slicer sellection setup
-        self.ui.slicerComboBox.connect("currentIndexChanged(int)", self.onSlicerComboBoxChanged)
+        #setup slicer comboBox
         self.setupSlicerComboBox()
+        self.ui.slicerComboBox.connect("currentIndexChanged(int)", self.onSlicerComboBoxChanged)
         
-        # Make sure parameter node is initialized (needed for module reload)
+        #Initialize parameter node
         self.initializeParameterNode()
         
+        #setup default slicerPath in parameter node
+        if self._parameterNode and not getattr(self._parameterNode, "slicerPath", None):
+            self._parameterNode.slicerPath = getattr(self, "_defaultSlicerPath", None)
 
     def cleanup(self) -> None:
         """Called when the application closes and the module widget is destroyed."""
@@ -234,21 +233,91 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             self._checkCanApply()
 
     def _checkCanApply(self, caller=None, event=None) -> None:
-        if self._parameterNode and self._parameterNode.inputSegmentation and self._parameterNode.thresholdedVolume:
-            self.ui.applyButton.toolTip = _("Compute output volume")
-            self.ui.applyButton.enabled = True
+        
+        if not self._parameterNode:
+            self.ui.generateGcodeButton.enabled = False
+            self.ui.generateGcodeButton.toolTip = _("Parameter node is not initialized")
+            return
+        
+        inputReady = self._parameterNode.inputSegmentation is not None
+        slicerReady = self._parameterNode.slicerPath and os.path.exists(self._parameterNode.slicerPath)
+        outputReady = bool(self._parameterNode.outputFilePath) is not None
+        
+        if inputReady and slicerReady and outputReady:
+            self.ui.generateGcodeButton.enabled = True
+            self.ui.generateGcodeButton.toolTip = _("Ready to generate G_code")
         else:
-            self.ui.applyButton.toolTip = _("Select input and output volume nodes")
-            self.ui.applyButton.enabled = False
-
+            self.ui.generateGcodeButton.enabled = False
+            missing = []
+            if not inputReady:
+                missing.append("input segmentation")
+            if not slicerReady:
+                missing.append("Slicer CLI path")
+            if not outputReady:
+                missing.append("output file path")
+            self.ui.generateGcodeButton.toolTip = _("Missing: " + ", ".join(missing))
+    
     def onGenerateGcodeButton(self) -> None:
         """Run processing when user clicks "Generate G-Code" button."""
         with slicer.util.tryWithErrorDisplay(_("Failed to generate G-code."), waitCursor=True):
             #Clear log
             self.ui.logTextBox.clear()
             self.ui.logTextBox.append("Starting G-code generation...")
+            
+            if not self._parameterNode:
+                self.initializeParameterNode()
            
-           #Placeholder pre slicing kod
+            #get input segmentation and output path
+            inputSegmentation = self._parameterNode.inputSegmentation
+            outputPath = self._parameterNode.outputFilePath
+            slicerPath = self._parameterNode.slicerPath #path to slicer CLI
+            
+            self.ui.logTextBox.append(f"Parameter node slicerPath: {self._parameterNode.slicerPath}")
+            self.ui.logTextBox.append(f"os.path.exists(slicerPath) = {os.path.exists(self._parameterNode.slicerPath)}")
+            
+            if not inputSegmentation:
+                raise ValueError("No input segmentation selected.")
+            if not outputPath:
+                raise ValueError("No output file path specified")
+            if not slicerPath or not os.path.exists(slicerPath):
+                raise ValueError("Slicer CLI path is invalid or not set")
+            
+            #export segemtation to temp stl file
+            stlPath = self.logic.exportSegmentationToSTL(inputSegmentation)
+            self.ui.logTextBox.append(f"Segment exported to temporary STL: {stlPath}")
+            
+            self.ui.logTextBox.append(f"Running external slicer CLI: {slicerPath}")
+            
+            outputDir = os.path.dirname(outputPath)
+            outputFilename = os.path.basename(outputPath)
+            
+            printerProfile = "/Users/benjamin/Desktop/Bambu Lab A1 0.4 nozzle - Copy 2.json"
+            filamentFile = "/Applications/OrcaSlicer.app/Contents/Resources/profiles/BBL/filament/Bambu PLA Aero @BBL A1.json"
+            processFile = "/Users/benjamin/Desktop/process_bbl_a1_0.4_full.json"  
+            
+            #command for slicer CLI
+            command = [
+                slicerPath,
+                "--arrange", "1",
+                "--orient", "1",
+                "--load-settings", f"{printerProfile};{processFile}",
+                "--load-filaments", filamentFile,
+                "--slice", "0",
+                "--export-3mf", f"{outputDir}//{outputFilename}.3mf",
+                "--export-slicedata", outputDir,
+                "--info",
+                stlPath
+            ]
+            
+            #run slicer
+            result = subprocess.run(command, capture_output=True, text=True)
+            
+            #show logs 
+            self.ui.logTextBox.append(result.stdout)
+            self.ui.logTextBox.append(result.stderr)
+            
+            self.ui.logTextBox.append("G-Code generation finished.")
+           
            
     def onInputSegmentationChanged(self, newNode) -> None:
         #update current selected input node
@@ -261,7 +330,7 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             None, #parent widget
             "Select output file",
             "",
-            "G-code files (*.gcode)"
+            "G-code files"
         )
         if filePath:
             #write path to outputPathLineEdit 
@@ -273,7 +342,7 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
     def setupSlicerComboBox(self) -> None:
         #expected path
         defaultPaths = []
-        defaultPaths.append("/Applications/BambuStudio.app/Contents/MacOS/BambuStudio")
+        defaultPaths.append("/Applications/OrcaSlicer.app/Contents/MacOS/OrcaSlicer")
         
         #check if path exists
         existingPaths = []
@@ -282,39 +351,77 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
                 existingPaths.append(path)
                 
         #fill combobox with existing paths
+        self.ui.slicerComboBox.blockSignals(True)
         self.ui.slicerComboBox.clear()
+        
         if existingPaths:
             #Shows "Bambu Studio" in combobox and saves path as itemData
-            self.ui.slicerComboBox.addItem("Bambu Studio", existingPaths)
+            self.ui.slicerComboBox.addItem("Orca Slicer", existingPaths[0])
+            #store default path to apply late if parameter node not ready yet
+            self._defaultSlicerPath = existingPaths[0]
+            
+            if self._parameterNode:
+                self._parameterNode.slicerPath = existingPaths[0]
+                
         else:
             #placeholder with None
             self.ui.slicerComboBox.addItem("Select Slicer…", None)
+            self._defaultSlicerPath = None
+            
+        self.ui.slicerComboBox.blockSignals(False)
             
         #connect browse button
+        try:
+            self.ui.slicerBrowseButton.disconnect("clicked(bool)")
+        except Exception:
+            pass
         self.ui.slicerBrowseButton.connect("clicked(bool)", self.onBrowseSlicer)
         
     def onBrowseSlicer(self) -> None:
         #open file dialog
-        filePath = QFileDialog.getSaveFileName(
+        filePath = QFileDialog.getOpenFileName(
             None, 
             "Select Slicer",
             "",
             "Executable files (*)"
         )
         
-        if filePath:
+        if isinstance(filePath, tuple):
+            filePath = filePath[0]
+        
+        if filePath and filePath != "":
             #clear combobox
+            self.ui.slicerComboBox.blockSignals(True)
             self.ui.slicerComboBox.clear()
             #add selected path to the combobox
-            self.ui.slicerComboBox.addItem("Custom File Path", filePath)
+            self.ui.slicerComboBox.addItem(os.path.basename(filePath), filePath)
+            self.ui.slicerComboBox.blockSignals(False)
+            
             #update parameter node
             if self._parameterNode:
                 self._parameterNode.slicerPath = filePath
+            else:
+                self._defaultSlicerPath = filePath
+                
+            #update button state
+            self._checkCanApply()
             
     def onSlicerComboBoxChanged(self, index):
+        if index < 0:
+            return
+        
         selectedPath = self.ui.slicerComboBox.itemData(index)
-        if self._parameterNode and selectedPath:
-            self._parameterNode.slicerPath = selectedPath
+        
+        if isinstance(selectedPath, (list, tuple)):
+            selectedPath = selectedPath[0] if selectedPath else None
+            
+        if selectedPath:
+            if self._parameterNode:
+                self._parameterNode.slicerPath = selectedPath
+            else:
+                self._defaultSlicerPath = selectedPath
+        
+        self._checkCanApply()
         
             
             
@@ -343,43 +450,49 @@ class VoxelPrintAutoLogic(ScriptedLoadableModuleLogic):
     def getParameterNode(self):
         return VoxelPrintAutoParameterNode(super().getParameterNode())
 
-    def process(self,
-                inputSegmentation: vtkMRMLSegmentationNode,
-                outputVolume: vtkMRMLScalarVolumeNode,
-                imageThreshold: float,
-                invert: bool = False,
-                showResult: bool = True) -> None:
-        """
-        Run the processing algorithm.
-        Can be used without GUI widget.
-        :param inputSegmentation: volume to be thresholded
-        :param outputVolume: thresholding result
-        :param imageThreshold: values above/below this threshold will be set to 0
-        :param invert: if True then values above the threshold will be set to 0, otherwise values below are set to 0
-        :param showResult: show output volume in slice viewers
-        """
+   
+    def exportSegmentationToSTL(self, segmentationNode: vtkMRMLSegmentationNode) -> str:
+        #Exports selected segmentation to a temp STL file and returns its path
+        
+        if not segmentationNode:
+            raise ValueError("Segmentation node is invalid")
+        
+        #temp dir
+        tempDir = tempfile.mkdtemp(prefix="VoxelPrint_")
+        stlFileName = f"{segmentationNode.GetName()}.stl"
+        stlPath = os.path.join(tempDir, stlFileName)
+        
+        segmentation = segmentationNode.GetSegmentation()
+        segmentIDs = vtk.vtkStringArray()
+        segmentation.GetSegmentIDs(segmentIDs)
+        
+        #export to one stl file
+        success = slicer.modules.segmentations.logic().ExportSegmentsClosedSurfaceRepresentationToFiles(
+            tempDir,
+            segmentationNode,
+            segmentIDs, #export all segments
+            "Closed surface",
+            "STL", #file format
+            True,
+            1.0, #scale
+        )
+        
+        if not success:
+            raise RuntimeError(f"Failed to export segmentation {segmentationNode.GetName()} to STL")
+        
+        if not os.path.exists(stlPath):
+            stlFiles = []
+            for f in os.listdir(tempDir):
+                if f.lower().endswith(".stl"):
+                    stlFiles.append
+            
+            if stlFiles:
+                stlPath = os.path.join(tempDir, stlFiles[0])
+            else:
+                raise RuntimeError(f"No STL file created in {tempDir}")
 
-        if not inputSegmentation or not outputVolume:
-            raise ValueError("Input or output volume is invalid")
-
-        import time
-
-        startTime = time.time()
-        logging.info("Processing started")
-
-        # Compute the thresholded output volume using the "Threshold Scalar Volume" CLI module
-        cliParams = {
-            "inputSegmentation": inputSegmentation.GetID(),
-            "OutputVolume": outputVolume.GetID(),
-            "ThresholdValue": imageThreshold,
-            "ThresholdType": "Above" if invert else "Below",
-        }
-        cliNode = slicer.cli.run(slicer.modules.thresholdscalarvolume, None, cliParams, wait_for_completion=True, update_display=showResult)
-        # We don't need the CLI module node anymore, remove it to not clutter the scene with it
-        slicer.mrmlScene.RemoveNode(cliNode)
-
-        stopTime = time.time()
-        logging.info(f"Processing completed in {stopTime-startTime:.2f} seconds")
+        return stlPath
+            
 
 
 #
@@ -437,13 +550,11 @@ class VoxelPrintAutoTest(ScriptedLoadableModuleTest):
         logic = VoxelPrintAutoLogic()
 
         # Test algorithm with non-inverted threshold
-        logic.process(inputSegmentation, outputVolume, threshold, True)
         outputScalarRange = outputVolume.GetImageData().GetScalarRange()
         self.assertEqual(outputScalarRange[0], inputScalarRange[0])
         self.assertEqual(outputScalarRange[1], threshold)
 
         # Test algorithm with inverted threshold
-        logic.process(inputSegmentation, outputVolume, threshold, False)
         outputScalarRange = outputVolume.GetImageData().GetScalarRange()
         self.assertEqual(outputScalarRange[0], inputScalarRange[0])
         self.assertEqual(outputScalarRange[1], inputScalarRange[1])
