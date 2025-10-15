@@ -115,6 +115,9 @@ class VoxelPrintAutoParameterNode:
     outputFilePath: str = "" #path where G-Code will be saved
     slicerPath: str = "" #path of bambu CLI
     stlPath: str = "" #temp stl file path
+    printerBrand: str = "" #name of the printer brand
+    printerModel: str = "" #model of the printer
+    nozzleSize: str = ""
 
 
 #
@@ -162,6 +165,26 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         #Setup input segmentation comboBox
         self.ui.inputComboBox.setMRMLScene(slicer.mrmlScene)
         self.ui.inputComboBox.connect("currentNodeChanged(vtkMRMLNode*)", self.onInputSegmentationChanged)
+        
+        #Setup printer selection combo box
+        self.printers = {
+            "Bambu Lab": ["A1", "X1 Carbon", "P1S"]
+        }
+        brands = list(self.printers.keys())
+        self.ui.printerBrandComboBox.addItems(brands)
+        self.ui.printerBrandComboBox.setCurrentIndex(0)
+        self.ui.printerBrandComboBox.connect("currentIndexChanged(int)", self.onPrinterBrandComboBoxChanged)
+        self.onPrinterBrandComboBoxChanged(None)
+        
+        self.ui.printerModelComboBox.connect("currentIndexChanged(int)", self.onPrinterModelComboBoxChanged)
+        self.onPrinterModelComboBoxChanged(None)
+        
+        self.nozzle = ["0.2 mm nozzle", "0.4 mm nozzle", "0.6 mm nozzle", "0.8 mm nozzle"]
+        self.ui.nozzleComboBox.addItems(self.nozzle)
+        self.ui.nozzleComboBox.setCurrentIndex(1)
+        self.ui.nozzleComboBox.connect("currentIndexChanged(int)", self.onNozzleComboBoxChanged)
+        self.onNozzleComboBoxChanged(None)
+        
         
         #setup slicer comboBox
         self.setupSlicerComboBox()
@@ -214,6 +237,14 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             firstVolumeNode = slicer.mrmlScene.GetFirstNodeByClass("vtkMRMLSegmentationNode")
             if firstVolumeNode:
                 self._parameterNode.inputSegmentation = firstVolumeNode
+        
+        #set initial printer information in parameterNode
+        if not self._parameterNode.printerBrand:
+            self._parameterNode.printerBrand = self.ui.printerBrandComboBox.currentText
+        if not self._parameterNode.printerModel:
+            self._parameterNode.printerModel = self.ui.printerModelComboBox.currentText
+        if not self._parameterNode.nozzleSize:
+            self._parameterNode.nozzleSize = self.ui.nozzleComboBox.currentText
 
     def setParameterNode(self, inputParameterNode: Optional[VoxelPrintAutoParameterNode]) -> None:
         """
@@ -317,6 +348,9 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             self.ui.logTextBox.append(result.stderr)
             
             self.ui.logTextBox.append("G-Code generation finished.")
+            self.ui.logTextBox.append(self._parameterNode.printerBrand)
+            self.ui.logTextBox.append(self._parameterNode.printerModel)
+            self.ui.logTextBox.append(self._parameterNode.nozzleSize)
            
            
     def onInputSegmentationChanged(self, newNode) -> None:
@@ -422,6 +456,35 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
                 self._defaultSlicerPath = selectedPath
         
         self._checkCanApply()
+    
+    def onPrinterBrandComboBoxChanged(self, index) -> None:
+        printerBrand = self.ui.printerBrandComboBox.currentText #get current selected printer brand
+        printerModel = self.printers.get(printerBrand, []) #get printer models for selected brand
+        
+        if printerBrand:
+            if self._parameterNode:
+                self._parameterNode.printerBrand = printerBrand
+        
+        modelComboBox = self.ui.printerModelComboBox 
+        modelComboBox.blockSignals(True) 
+        modelComboBox.clear() #clear combo box
+        modelComboBox.addItems(printerModel) #add printer models to combobox
+        
+        if printerModel:
+            modelComboBox.setCurrentIndex(0)
+        modelComboBox.blockSignals(False)
+        
+    def onPrinterModelComboBoxChanged(self, index) -> None:
+        model = self.ui.printerModelComboBox.currentText
+        if self._parameterNode:
+            self._parameterNode.printerModel = model
+    
+    def onNozzleComboBoxChanged(self, index) -> None:
+        nozzle = self.ui.nozzleComboBox.currentText
+        if self._parameterNode:
+            self._parameterNode.nozzleSize = nozzle
+            print(self._parameterNode.nozzleSize)
+        
         
             
             
@@ -442,7 +505,7 @@ class VoxelPrintAutoLogic(ScriptedLoadableModuleLogic):
     Uses ScriptedLoadableModuleLogic base class, available at:
     https://github.com/Slicer/Slicer/blob/main/Base/Python/slicer/ScriptedLoadableModule.py
     """
-
+    
     def __init__(self) -> None:
         """Called when the logic class is instantiated. Can be used for initializing member variables."""
         ScriptedLoadableModuleLogic.__init__(self)
