@@ -6,6 +6,8 @@ import subprocess
 
 from qt import QFileDialog
 
+import re
+
 import vtk
 
 import slicer
@@ -118,6 +120,7 @@ class VoxelPrintAutoParameterNode:
     printerBrand: str = "" #name of the printer brand
     printerModel: str = "" #model of the printer
     nozzleSize: str = ""
+    processProfilePath: str = "" #path of process profile
 
 
 #
@@ -179,11 +182,23 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self.ui.printerModelComboBox.connect("currentIndexChanged(int)", self.onPrinterModelComboBoxChanged)
         self.onPrinterModelComboBoxChanged(None)
         
-        self.nozzle = ["0.2 mm nozzle", "0.4 mm nozzle", "0.6 mm nozzle", "0.8 mm nozzle"]
+        self.nozzle = ["0.2 nozzle", "0.4 nozzle", "0.6 nozzle", "0.8 nozzle"]
         self.ui.nozzleComboBox.addItems(self.nozzle)
         self.ui.nozzleComboBox.setCurrentIndex(1)
         self.ui.nozzleComboBox.connect("currentIndexChanged(int)", self.onNozzleComboBoxChanged)
         self.onNozzleComboBoxChanged(None)
+        
+        #setup process profile combo box
+        defaultPrinterBrand = self.ui.printerBrandComboBox.currentText
+        defaultPrinterModel = self.ui.printerModelComboBox.currentText
+        defaultNozzle = self.ui.nozzleComboBox.currentText
+        
+        compatibleProcessProfiles = self.logic.findProcessProfile(defaultPrinterBrand, defaultPrinterModel, defaultNozzle)
+        self.ui.processProfileComboBox.addItems(compatibleProcessProfiles)
+        self.ui.processProfileComboBox.setCurrentIndex(0)
+        self.ui.processProfileComboBox.connect("currentIndexChanged(int)", self.onProcessProfileComboBoxChanged)
+        
+        
         
         
         #setup slicer comboBox
@@ -460,6 +475,7 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
     def onPrinterBrandComboBoxChanged(self, index) -> None:
         printerBrand = self.ui.printerBrandComboBox.currentText #get current selected printer brand
         printerModel = self.printers.get(printerBrand, []) #get printer models for selected brand
+        nozzleSize = self.ui.nozzleComboBox.currentText
         
         if printerBrand:
             if self._parameterNode:
@@ -474,16 +490,76 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             modelComboBox.setCurrentIndex(0)
         modelComboBox.blockSignals(False)
         
+        processProfile = self.logic.findProcessProfile(printerBrand, printerModel[0], nozzleSize)
+        
+        processComboBox = self.ui.processProfileComboBox
+        processComboBox.blockSignals(True)
+        processComboBox.clear()
+        processComboBox.addItems(processProfile)
+        
+        if processProfile:
+            processComboBox.setCurrentIndex(0)
+            self.onProcessProfileComboBoxChanged(None)
+        processComboBox.blockSignals(False)
+        
     def onPrinterModelComboBoxChanged(self, index) -> None:
         model = self.ui.printerModelComboBox.currentText
+        nozzle = self.ui.nozzleComboBox.currentText
+        printerBrand = self.ui.printerBrandComboBox.currentText
+        
         if self._parameterNode:
             self._parameterNode.printerModel = model
+            
+        processProfile = self.logic.findProcessProfile(printerBrand, model, nozzle)
+        
+        processComboBox = self.ui.processProfileComboBox
+        processComboBox.blockSignals(True)
+        processComboBox.clear()
+        processComboBox.addItems(processProfile)
+        
+        if processProfile:
+            processComboBox.setCurrentIndex(0)
+            self.onProcessProfileComboBoxChanged(None)
+        processComboBox.blockSignals(False)
+        
     
     def onNozzleComboBoxChanged(self, index) -> None:
+        model = self.ui.printerModelComboBox.currentText
         nozzle = self.ui.nozzleComboBox.currentText
+        printerBrand = self.ui.printerBrandComboBox.currentText
+        
         if self._parameterNode:
             self._parameterNode.nozzleSize = nozzle
-            print(self._parameterNode.nozzleSize)
+        
+        processProfile = self.logic.findProcessProfile(printerBrand, model, nozzle)
+        
+        processComboBox = self.ui.processProfileComboBox
+        processComboBox.blockSignals(True)
+        processComboBox.clear()
+        processComboBox.addItems(processProfile)
+        
+        if processProfile:
+            processComboBox.setCurrentIndex(0)
+            self.onProcessProfileComboBoxChanged(None)
+        processComboBox.blockSignals(False)
+    
+    def onProcessProfileComboBoxChanged(self, index) -> None:
+        printerBrand = self.ui.printerBrandComboBox.currentText
+        processProfile = self.ui.processProfileComboBox.currentText
+        currentDir = os.path.dirname(__file__)
+        
+        if printerBrand == "Bambu Lab":
+            printerBrandDir = "BBL"
+        
+        processDir = os.path.join(currentDir, "Resources", "Profiles", printerBrandDir, "process")
+        
+        
+        if self._parameterNode:
+            processProfilePath = os.path.join(processDir, processProfile)
+            if os.path.exists(processProfilePath):
+                self._parameterNode.processProfilePath = processProfilePath
+            
+        
         
         
             
@@ -555,6 +631,38 @@ class VoxelPrintAutoLogic(ScriptedLoadableModuleLogic):
                 raise RuntimeError(f"No STL file created in {tempDir}")
 
         return stlPath
+    
+    def findProcessProfile(self, printerBrand, printerModel, nozzle):
+        currentDir = os.path.dirname(__file__)
+        
+        if printerBrand == "Bambu Lab":
+            printerBrandDir = "BBL"
+                
+        processDir = os.path.join(currentDir, "Resources", "Profiles", printerBrandDir, "process")
+        
+        if not os.path.exists(processDir):
+            return []
+        
+        compatibleProfiles = []
+        
+        if printerModel == "P1S" or printerModel == "X1 Carbon" or printerModel == "X1E" or printerModel == "X1":
+            printerModel = "X1C"
+        if printerModel == "A1 mini":
+            printerModel = "A1M"
+        
+        printerModelRegex = rf"{re.escape(printerModel)}(?![A-Za-z0-9])"
+        
+        for filename in os.listdir(processDir):
+            if filename.endswith(".json"):
+                if re.search(printerModelRegex, filename):
+                    if nozzle == "0.4 nozzle":
+                        if "nozzle" not in filename.lower():
+                            compatibleProfiles.append(filename)
+                    else:
+                        if nozzle in filename.lower():
+                            compatibleProfiles.append(filename)
+        
+        return compatibleProfiles
             
 
 
