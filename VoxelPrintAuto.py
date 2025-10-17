@@ -3,6 +3,7 @@ import os
 from typing import Annotated, Optional
 import tempfile
 import subprocess
+import json
 
 from qt import QFileDialog
 
@@ -330,23 +331,29 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             
             #export segemtation to temp stl file
             stlPath = self.logic.exportSegmentationToSTL(inputSegmentation)
-            self.ui.logTextBox.append(f"Segment exported to temporary STL: {stlPath}")
             
+            self.ui.logTextBox.append("")
+            self.ui.logTextBox.append(f"Segment exported to temporary STL: {stlPath}")
             self.ui.logTextBox.append(f"Running external slicer CLI: {slicerPath}")
             
             outputDir = os.path.dirname(outputPath)
             outputFilename = os.path.basename(outputPath)
             
-            printerProfile = "/Users/benjamin/Desktop/Bambu Lab A1 0.4 nozzle - Copy 2.json"
+            machineFile = self.logic.findMachineProfile(self._parameterNode.printerBrand, self._parameterNode.printerModel, self._parameterNode.nozzleSize)
+            self.logic.addG92E0ToGcode(machineFile)
+            
             filamentFile = "/Applications/OrcaSlicer.app/Contents/Resources/profiles/BBL/filament/Bambu PLA Aero @BBL A1.json"
-            processFile = "/Users/benjamin/Desktop/process_bbl_a1_0.4_full.json"  
+            processFile = self._parameterNode.processProfilePath
+            self.ui.logTextBox.append(f"Process profile selected: {processFile}")
+            self.ui.logTextBox.append(f"Machine profile selected: {machineFile}")
+            self.ui.logTextBox.append("")
             
             #command for slicer CLI
             command = [
                 slicerPath,
                 "--arrange", "1",
                 "--orient", "1",
-                "--load-settings", f"{printerProfile};{processFile}",
+                "--load-settings", f"{machineFile};{processFile}",
                 "--load-filaments", filamentFile,
                 "--slice", "0",
                 "--export-3mf", f"{outputDir}//{outputFilename}.3mf",
@@ -663,6 +670,40 @@ class VoxelPrintAutoLogic(ScriptedLoadableModuleLogic):
                             compatibleProfiles.append(filename)
         
         return compatibleProfiles
+    
+    def findMachineProfile(self, printerBrand, printerModel, nozzle):
+        currentDir = os.path.dirname(__file__)
+        
+        if printerBrand == "Bambu Lab":
+            printerBrandDir = "BBL"
+                
+        machineDir = os.path.join(currentDir, "Resources", "Profiles", printerBrandDir, "machine")
+        
+        if not os.path.exists(machineDir):
+            return []
+        
+        printerModelRegex = rf"{re.escape(printerModel)}($| \d)"
+        
+        for filename in os.listdir(machineDir):
+            if filename.endswith(".json"):
+                if re.search(printerModelRegex, filename):
+                    if nozzle in filename.lower():
+                        machineProfile = filename
+                        
+        machineProfilePath = os.path.join(machineDir, machineProfile)
+        print(machineProfilePath)
+        
+        return machineProfilePath
+    
+    def addG92E0ToGcode(self, jsonPath) -> None:
+        with open(jsonPath, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            
+        data["before_layer_change_gcode"] = "G92 E0 ; zero the extruder"
+        
+        with open(jsonPath, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+            
             
 
 
