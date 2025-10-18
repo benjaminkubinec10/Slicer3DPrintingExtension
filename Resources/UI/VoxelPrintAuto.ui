@@ -6,7 +6,7 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>545</width>
+    <width>646</width>
     <height>778</height>
    </rect>
   </property>
@@ -138,8 +138,26 @@
             <string>Filament settings</string>
            </property>
            <layout class="QGridLayout" name="gridLayout_5">
-            <item row="2" column="1">
-             <widget class="QComboBox" name="filamentTypeComboBox"/>
+            <item row="4" column="2">
+             <widget class="QLabel" name="initialNozzleTempLabel">
+              <property name="text">
+               <string>Initial layer nozzle temp.:</string>
+              </property>
+             </widget>
+            </item>
+            <item row="6" column="0">
+             <widget class="QLabel" name="bedTempLabel">
+              <property name="text">
+               <string>Bed temp.:</string>
+              </property>
+             </widget>
+            </item>
+            <item row="4" column="0">
+             <widget class="QLabel" name="nozzleTempLabel">
+              <property name="text">
+               <string>Nozzle temp.:</string>
+              </property>
+             </widget>
             </item>
             <item row="2" column="0">
              <widget class="QLabel" name="filamentTypeLabel">
@@ -148,6 +166,15 @@
               </property>
              </widget>
             </item>
+            <item row="3" column="1" colspan="3">
+             <widget class="QComboBox" name="filamentProfileComboBox"/>
+            </item>
+            <item row="6" column="3">
+             <widget class="QLineEdit" name="initialBedTempLineEdit"/>
+            </item>
+            <item row="7" column="1">
+             <widget class="QLineEdit" name="fanSpeedLineEdit"/>
+            </item>
             <item row="3" column="0">
              <widget class="QLabel" name="filamentProfileLabel">
               <property name="text">
@@ -155,8 +182,41 @@
               </property>
              </widget>
             </item>
-            <item row="3" column="1">
-             <widget class="QComboBox" name="filamentProfileComboBox"/>
+            <item row="7" column="3">
+             <widget class="QLineEdit" name="flowRatioLineEdit"/>
+            </item>
+            <item row="4" column="3">
+             <widget class="QLineEdit" name="initialNozzleTempLineEdit"/>
+            </item>
+            <item row="7" column="0">
+             <widget class="QLabel" name="fanSpeedLabel">
+              <property name="text">
+               <string>Fan speed:</string>
+              </property>
+             </widget>
+            </item>
+            <item row="6" column="2">
+             <widget class="QLabel" name="initialBedTempLabel">
+              <property name="text">
+               <string>Initial layer bed temp.:</string>
+              </property>
+             </widget>
+            </item>
+            <item row="7" column="2">
+             <widget class="QLabel" name="flowRatioLabel">
+              <property name="text">
+               <string>Flow / Extursion mutliplier:</string>
+              </property>
+             </widget>
+            </item>
+            <item row="4" column="1">
+             <widget class="QLineEdit" name="nozzleTempLineEdit"/>
+            </item>
+            <item row="6" column="1">
+             <widget class="QLineEdit" name="bedTempLineEdit"/>
+            </item>
+            <item row="2" column="1">
+             <widget class="QComboBox" name="filamentTypeComboBox"/>
             </item>
            </layout>
           </widget>

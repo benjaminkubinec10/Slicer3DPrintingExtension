@@ -512,6 +512,8 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             filamentProfilePath = os.path.join(filamentDir, filamentProfile)
             if os.path.exists(filamentProfilePath):
                 self._parameterNode.filamentProfilePath = filamentProfilePath
+                
+        self.loadFilamentValues()
         
     def updateFilamentProfileComboBox(self, printerBrand, printerModel, nozzleSize, filamentType) -> None:
         
@@ -538,6 +540,30 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
 
         self.updateFilamentProfileComboBox(printerBrand, printerModel, nozzleSize, filamentType)
         
+    def loadFilamentValues(self):
+        filamentFilePath = self._parameterNode.filamentProfilePath
+        if not filamentFilePath:
+            return
+        
+        nozzleTemp = self.logic.getFilamentProfileValues(filamentFilePath, "nozzle_temperature")
+        nozzleTempInitial = self.logic.getFilamentProfileValues(filamentFilePath, "nozzle_temperature_initial_layer")
+        bedTemp = self.logic.getFilamentProfileValues(filamentFilePath, "hot_plate_temp")
+        bedTempInitial = self.logic.getFilamentProfileValues(filamentFilePath, "hot_plate_temp_initial_layer")
+        flowRatio = self.logic.getFilamentProfileValues(filamentFilePath, "filament_flow_ratio")
+        fanSpeed = self.logic.getFilamentProfileValues(filamentFilePath, "fan_max_speed")
+        
+        if nozzleTemp:
+            self.ui.nozzleTempLineEdit.setText(str(nozzleTemp[0]))
+        if nozzleTempInitial:
+            self.ui.initialNozzleTempLineEdit.setText(str(nozzleTempInitial[0]))
+        if bedTemp:
+            self.ui.bedTempLineEdit.setText(str(bedTemp[0]))
+        if bedTempInitial:
+            self.ui.initialBedTempLineEdit.setText(str(bedTempInitial[0]))
+        if flowRatio:
+            self.ui.flowRatioLineEdit.setText(str(flowRatio[0]))
+        if fanSpeed:
+            self.ui.fanSpeedLineEdit.setText(str(fanSpeed[0]))
                   
 
 #
@@ -698,6 +724,29 @@ class VoxelPrintAutoLogic(ScriptedLoadableModuleLogic):
                     compatibleProfile.append(filename)
         
         return compatibleProfile
+    
+    def getFilamentProfileValues(self, filamentFilePath, key, visited=None):
+        if visited is None:
+            visited = set()
+        
+        if filamentFilePath in visited:
+            return None
+        visited.add(filamentFilePath)
+        
+        try:
+            with open(filamentFilePath, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception:
+            return None
+        
+        if key in data:
+            return data[key]
+        else:
+            if "inherits" in data:
+                baseFile = data["inherits"]
+                basePath = os.path.join(os.path.dirname(filamentFilePath), baseFile + ".json")
+                if os.path.exists(basePath):
+                    return self.getFilamentProfileValues(basePath, key, visited)
         
 
 #
