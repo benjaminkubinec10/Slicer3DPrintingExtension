@@ -4,13 +4,10 @@ from typing import Annotated, Optional
 import tempfile
 import subprocess
 import json
-
-from qt import QFileDialog
-
 import re
 
+from qt import QFileDialog
 import vtk
-
 import slicer
 from slicer.i18n import tr as _
 from slicer.i18n import translate
@@ -20,7 +17,6 @@ from slicer.parameterNodeWrapper import (
     parameterNodeWrapper,
     WithinRange,
 )
-
 from slicer import vtkMRMLSegmentationNode, vtkMRMLScalarVolumeNode
 
 #
@@ -35,75 +31,13 @@ class VoxelPrintAuto(ScriptedLoadableModule):
 
     def __init__(self, parent):
         ScriptedLoadableModule.__init__(self, parent)
-        self.parent.title = _("VoxelPrintAuto")  # TODO: make this more human readable by adding spaces
-        # TODO: set categories (folders where the module shows up in the module selector)
+        # _() function marks text as translatable to other languages
+        self.parent.title = _("VoxelPrintAuto")
         self.parent.categories = [translate("qSlicerAbstractCoreModule", "3D Printing")]
         self.parent.dependencies = []  # TODO: add here list of module names that this module requires
         self.parent.contributors = ["John Doe (AnyWare Corp.)"]  # TODO: replace with "Firstname Lastname (Organization)"
-        # TODO: update with short description of the module and a link to online module documentation
-        # _() function marks text as translatable to other languages
-        self.parent.helpText = _("""
-This is an example of scripted loadable module bundled in an extension.
-See more information in <a href="https://github.com/organization/projectname#VoxelPrintAuto">module documentation</a>.
-""")
-        # TODO: replace with organization, grant and thanks
-        self.parent.acknowledgementText = _("""
-This file was originally developed by Jean-Christophe Fillion-Robin, Kitware Inc., Andras Lasso, PerkLab,
-and Steve Pieper, Isomics, Inc. and was partially funded by NIH grant 3P41RR013218-12S1.
-""")
-
-        # Additional initialization step after application startup is complete
-        slicer.app.connect("startupCompleted()", registerSampleData)
-
-
-#
-# Register sample data sets in Sample Data module
-#
-
-
-def registerSampleData():
-    """Add data sets to Sample Data module."""
-    # It is always recommended to provide sample data for users to make it easy to try the module,
-    # but if no sample data is available then this method (and associated startupCompeted signal connection) can be removed.
-
-    import SampleData
-
-    iconsPath = os.path.join(os.path.dirname(__file__), "Resources/Icons")
-
-    # To ensure that the source code repository remains small (can be downloaded and installed quickly)
-    # it is recommended to store data sets that are larger than a few MB in a Github release.
-
-    # VoxelPrintAuto1
-    SampleData.SampleDataLogic.registerCustomSampleDataSource(
-        # Category and sample name displayed in Sample Data module
-        category="VoxelPrintAuto",
-        sampleName="VoxelPrintAuto1",
-        # Thumbnail should have size of approximately 260x280 pixels and stored in Resources/Icons folder.
-        # It can be created by Screen Capture module, "Capture all views" option enabled, "Number of images" set to "Single".
-        thumbnailFileName=os.path.join(iconsPath, "VoxelPrintAuto1.png"),
-        # Download URL and target file name
-        uris="https://github.com/Slicer/SlicerTestingData/releases/download/SHA256/998cb522173839c78657f4bc0ea907cea09fd04e44601f17c82ea27927937b95",
-        fileNames="VoxelPrintAuto1.nrrd",
-        # Checksum to ensure file integrity. Can be computed by this command:
-        #  import hashlib; print(hashlib.sha256(open(filename, "rb").read()).hexdigest())
-        checksums="SHA256:998cb522173839c78657f4bc0ea907cea09fd04e44601f17c82ea27927937b95",
-        # This node name will be used when the data set is loaded
-        nodeNames="VoxelPrintAuto1",
-    )
-
-    # VoxelPrintAuto2
-    SampleData.SampleDataLogic.registerCustomSampleDataSource(
-        # Category and sample name displayed in Sample Data module
-        category="VoxelPrintAuto",
-        sampleName="VoxelPrintAuto2",
-        thumbnailFileName=os.path.join(iconsPath, "VoxelPrintAuto2.png"),
-        # Download URL and target file name
-        uris="https://github.com/Slicer/SlicerTestingData/releases/download/SHA256/1a64f3f422eb3d1c9b093d1a18da354b13bcf307907c66317e2463ee530b7a97",
-        fileNames="VoxelPrintAuto2.nrrd",
-        checksums="SHA256:1a64f3f422eb3d1c9b093d1a18da354b13bcf307907c66317e2463ee530b7a97",
-        # This node name will be used when the data set is loaded
-        nodeNames="VoxelPrintAuto2",
-    )
+        self.parent.helpText = _("Automated 3D printing workflow for anatomical segmentations.") # TODO: Link to online module documentation
+        self.parent.acknowledgementText = _("""""")# TODO: replace with organization, grant and thanks
 
 
 #
@@ -117,11 +51,12 @@ class VoxelPrintAutoParameterNode:
     inputSegmentation: vtkMRMLSegmentationNode #selected segmentation
     outputFilePath: str = "" #path where G-Code will be saved
     slicerPath: str = "" #path of bambu CLI
-    stlPath: str = "" #temp stl file path
     printerBrand: str = "" #name of the printer brand
     printerModel: str = "" #model of the printer
     nozzleSize: str = ""
     processProfilePath: str = "" #path of process profile
+    filamentProfilePath: str = ""
+    filamentType: str = ""
 
 
 #
@@ -178,29 +113,24 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self.ui.printerBrandComboBox.addItems(brands)
         self.ui.printerBrandComboBox.setCurrentIndex(0)
         self.ui.printerBrandComboBox.connect("currentIndexChanged(int)", self.onPrinterBrandComboBoxChanged)
-        self.onPrinterBrandComboBoxChanged(None)
         
         self.ui.printerModelComboBox.connect("currentIndexChanged(int)", self.onPrinterModelComboBoxChanged)
-        self.onPrinterModelComboBoxChanged(None)
+        
+        self.onPrinterBrandComboBoxChanged(0)
         
         self.nozzle = ["0.2 nozzle", "0.4 nozzle", "0.6 nozzle", "0.8 nozzle"]
         self.ui.nozzleComboBox.addItems(self.nozzle)
         self.ui.nozzleComboBox.setCurrentIndex(1)
         self.ui.nozzleComboBox.connect("currentIndexChanged(int)", self.onNozzleComboBoxChanged)
-        self.onNozzleComboBoxChanged(None)
         
         #setup process profile combo box
-        defaultPrinterBrand = self.ui.printerBrandComboBox.currentText
-        defaultPrinterModel = self.ui.printerModelComboBox.currentText
-        defaultNozzle = self.ui.nozzleComboBox.currentText
-        
-        compatibleProcessProfiles = self.logic.findProcessProfile(defaultPrinterBrand, defaultPrinterModel, defaultNozzle)
-        self.ui.processProfileComboBox.addItems(compatibleProcessProfiles)
-        self.ui.processProfileComboBox.setCurrentIndex(0)
         self.ui.processProfileComboBox.connect("currentIndexChanged(int)", self.onProcessProfileComboBoxChanged)
         
-        
-        
+        #setup filament combobox
+        self.filamentType = ["PLA", "PETG", "ABS", "ASA", "PVA", "HIPS", "PC"]
+        self.ui.filamentTypeComboBox.addItems(self.filamentType)
+        self.ui.filamentTypeComboBox.connect("currentIndexChanged(int)", self.onFilamentTypeComboBoxChanged)
+        self.ui.filamentProfileComboBox.connect("currentIndexChanged(int)", self.onFilamentProfileComboBoxChanged)
         
         #setup slicer comboBox
         self.setupSlicerComboBox()
@@ -261,6 +191,18 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             self._parameterNode.printerModel = self.ui.printerModelComboBox.currentText
         if not self._parameterNode.nozzleSize:
             self._parameterNode.nozzleSize = self.ui.nozzleComboBox.currentText
+        if not self._parameterNode.filamentType:
+            self._parameterNode.filamentType = self.ui.filamentTypeComboBox.currentText
+            
+        printerBrand = self._parameterNode.printerBrand
+        printerModel = self._parameterNode.printerModel
+        nozzleSize = self._parameterNode.nozzleSize
+        filamentType = self._parameterNode.filamentType
+        
+        self.updateProcessProfileComboBox(printerBrand, printerModel, nozzleSize)
+        self.updateFilamentProfileComboBox(printerBrand, printerModel, nozzleSize, filamentType)
+        
+        
 
     def setParameterNode(self, inputParameterNode: Optional[VoxelPrintAutoParameterNode]) -> None:
         """
@@ -331,7 +273,7 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             
             #export segemtation to temp stl file
             stlPath = self.logic.exportSegmentationToSTL(inputSegmentation)
-            
+
             self.ui.logTextBox.append("")
             self.ui.logTextBox.append(f"Segment exported to temporary STL: {stlPath}")
             self.ui.logTextBox.append(f"Running external slicer CLI: {slicerPath}")
@@ -483,6 +425,7 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         printerBrand = self.ui.printerBrandComboBox.currentText #get current selected printer brand
         printerModel = self.printers.get(printerBrand, []) #get printer models for selected brand
         nozzleSize = self.ui.nozzleComboBox.currentText
+        filamentType = self.ui.filamentTypeComboBox.currentText
         
         if printerBrand:
             if self._parameterNode:
@@ -497,58 +440,33 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             modelComboBox.setCurrentIndex(0)
         modelComboBox.blockSignals(False)
         
-        processProfile = self.logic.findProcessProfile(printerBrand, printerModel[0], nozzleSize)
-        
-        processComboBox = self.ui.processProfileComboBox
-        processComboBox.blockSignals(True)
-        processComboBox.clear()
-        processComboBox.addItems(processProfile)
-        
-        if processProfile:
-            processComboBox.setCurrentIndex(0)
-            self.onProcessProfileComboBoxChanged(None)
-        processComboBox.blockSignals(False)
+        self.updateProcessProfileComboBox(printerBrand, printerModel[0], nozzleSize)
+        self.updateFilamentProfileComboBox(printerBrand, printerModel[0], nozzleSize, filamentType)
         
     def onPrinterModelComboBoxChanged(self, index) -> None:
-        model = self.ui.printerModelComboBox.currentText
-        nozzle = self.ui.nozzleComboBox.currentText
+        printerModel = self.ui.printerModelComboBox.currentText
+        nozzleSize = self.ui.nozzleComboBox.currentText
         printerBrand = self.ui.printerBrandComboBox.currentText
+        filamentType = self.ui.filamentTypeComboBox.currentText
         
         if self._parameterNode:
-            self._parameterNode.printerModel = model
+            self._parameterNode.printerModel = printerModel
             
-        processProfile = self.logic.findProcessProfile(printerBrand, model, nozzle)
-        
-        processComboBox = self.ui.processProfileComboBox
-        processComboBox.blockSignals(True)
-        processComboBox.clear()
-        processComboBox.addItems(processProfile)
-        
-        if processProfile:
-            processComboBox.setCurrentIndex(0)
-            self.onProcessProfileComboBoxChanged(None)
-        processComboBox.blockSignals(False)
+        self.updateProcessProfileComboBox(printerBrand, printerModel, nozzleSize)
+        self.updateFilamentProfileComboBox(printerBrand, printerModel, nozzleSize, filamentType)
         
     
     def onNozzleComboBoxChanged(self, index) -> None:
-        model = self.ui.printerModelComboBox.currentText
-        nozzle = self.ui.nozzleComboBox.currentText
+        printerModel = self.ui.printerModelComboBox.currentText
+        nozzleSize = self.ui.nozzleComboBox.currentText
         printerBrand = self.ui.printerBrandComboBox.currentText
+        filamentType = self.ui.filamentTypeComboBox.currentText
         
         if self._parameterNode:
-            self._parameterNode.nozzleSize = nozzle
+            self._parameterNode.nozzleSize = nozzleSize
         
-        processProfile = self.logic.findProcessProfile(printerBrand, model, nozzle)
-        
-        processComboBox = self.ui.processProfileComboBox
-        processComboBox.blockSignals(True)
-        processComboBox.clear()
-        processComboBox.addItems(processProfile)
-        
-        if processProfile:
-            processComboBox.setCurrentIndex(0)
-            self.onProcessProfileComboBoxChanged(None)
-        processComboBox.blockSignals(False)
+        self.updateProcessProfileComboBox(printerBrand, printerModel, nozzleSize)
+        self.updateFilamentProfileComboBox(printerBrand, printerModel, nozzleSize, filamentType)
     
     def onProcessProfileComboBoxChanged(self, index) -> None:
         printerBrand = self.ui.printerBrandComboBox.currentText
@@ -565,14 +483,62 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             processProfilePath = os.path.join(processDir, processProfile)
             if os.path.exists(processProfilePath):
                 self._parameterNode.processProfilePath = processProfilePath
-            
+                
+    def updateProcessProfileComboBox(self, printerBrand, printerModel, nozzleSize):
         
+        processProfile = self.logic.findProcessProfile(printerBrand, printerModel, nozzleSize)
         
+        processComboBox = self.ui.processProfileComboBox
+        processComboBox.blockSignals(True)
+        processComboBox.clear()
+        processComboBox.addItems(processProfile)
         
+        if processProfile:
+            processComboBox.setCurrentIndex(0)
+            self.onProcessProfileComboBoxChanged(None)
+        processComboBox.blockSignals(False)
+        
+    def onFilamentProfileComboBoxChanged(self, index) -> None:
+        printerBrand = self.ui.printerBrandComboBox.currentText
+        filamentProfile = self.ui.filamentProfileComboBox.currentText
+        currentDir = os.path.dirname(__file__)
+        
+        if printerBrand == "Bambu Lab":
+            printerBrandDir = "BBL"
             
-            
-      
-            
+        filamentDir = os.path.join(currentDir, "Resources", "Profiles", printerBrandDir, "filament")
+        
+        if self._parameterNode:
+            filamentProfilePath = os.path.join(filamentDir, filamentProfile)
+            if os.path.exists(filamentProfilePath):
+                self._parameterNode.filamentProfilePath = filamentProfilePath
+        
+    def updateFilamentProfileComboBox(self, printerBrand, printerModel, nozzleSize, filamentType) -> None:
+        
+        filamentProfile = self.logic.findFilamentProfile(printerBrand, printerModel, nozzleSize, filamentType)
+        
+        filamentComboBox = self.ui.filamentProfileComboBox
+        filamentComboBox.blockSignals(True)
+        filamentComboBox.clear()
+        filamentComboBox.addItems(filamentProfile)
+        
+        if filamentProfile:
+            filamentComboBox.setCurrentIndex(0)
+            self.onFilamentProfileComboBoxChanged(None)
+        filamentComboBox.blockSignals(False)
+        
+    def onFilamentTypeComboBoxChanged(self, index) -> None:
+        printerModel = self.ui.printerModelComboBox.currentText
+        nozzleSize = self.ui.nozzleComboBox.currentText
+        printerBrand = self.ui.printerBrandComboBox.currentText
+        filamentType = self.ui.filamentTypeComboBox.currentText
+        
+        if self._parameterNode:
+            self._parameterNode.filamentType = filamentType
+
+        self.updateFilamentProfileComboBox(printerBrand, printerModel, nozzleSize, filamentType)
+        
+                  
 
 #
 # VoxelPrintAutoLogic
@@ -654,7 +620,7 @@ class VoxelPrintAutoLogic(ScriptedLoadableModuleLogic):
         
         if printerModel == "P1S" or printerModel == "X1 Carbon" or printerModel == "X1E" or printerModel == "X1":
             printerModel = "X1C"
-        if printerModel == "A1 mini":
+        elif printerModel == "A1 mini":
             printerModel = "A1M"
         
         printerModelRegex = rf"{re.escape(printerModel)}(?![A-Za-z0-9])"
@@ -704,8 +670,35 @@ class VoxelPrintAutoLogic(ScriptedLoadableModuleLogic):
         with open(jsonPath, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
             
+    def findFilamentProfile(self, printerBrand, printerModel, nozzleSize, filamentType):
+        currentDir = os.path.dirname(__file__)
+        
+        if printerBrand == "Bambu Lab":
+            printerBrandDir = "BBL"
             
-
+        filamentDir = os.path.join(currentDir, "Resources", "Profiles", printerBrandDir, "filament")
+        
+        if not os.path.exists(filamentDir):
+            return []
+            
+        compatibleProfile = []
+        
+        fullPrinterName = f"{printerBrand} {printerModel} {nozzleSize}"
+        
+        for filename in os.listdir(filamentDir):
+            if filename.endswith(".json") and filamentType in filename:
+                filePath = os.path.join(filamentDir, filename)
+                try:
+                    with open(filePath, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                except Exception:
+                    continue
+                
+                if fullPrinterName in data.get("compatible_printers", []):
+                    compatibleProfile.append(filename)
+        
+        return compatibleProfile
+        
 
 #
 # VoxelPrintAutoTest
@@ -742,33 +735,9 @@ class VoxelPrintAutoTest(ScriptedLoadableModuleTest):
 
         self.delayDisplay("Starting the test")
 
-        # Get/create input data
-
-        import SampleData
-
-        registerSampleData()
-        inputSegmentation = SampleData.downloadSample("VoxelPrintAuto1")
-        self.delayDisplay("Loaded test data set")
-
-        inputScalarRange = inputSegmentation.GetImageData().GetScalarRange()
-        self.assertEqual(inputScalarRange[0], 0)
-        self.assertEqual(inputScalarRange[1], 695)
-
-        outputVolume = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLScalarVolumeNode")
-        threshold = 100
-
         # Test the module logic
 
         logic = VoxelPrintAutoLogic()
+        
+#TODO: Change whole test class
 
-        # Test algorithm with non-inverted threshold
-        outputScalarRange = outputVolume.GetImageData().GetScalarRange()
-        self.assertEqual(outputScalarRange[0], inputScalarRange[0])
-        self.assertEqual(outputScalarRange[1], threshold)
-
-        # Test algorithm with inverted threshold
-        outputScalarRange = outputVolume.GetImageData().GetScalarRange()
-        self.assertEqual(outputScalarRange[0], inputScalarRange[0])
-        self.assertEqual(outputScalarRange[1], inputScalarRange[1])
-
-        self.delayDisplay("Test passed")

@@ -6,7 +6,7 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>627</width>
+    <width>545</width>
     <height>778</height>
    </rect>
   </property>
@@ -89,6 +89,15 @@
          <string>Printer / Slicer Selection</string>
         </property>
         <layout class="QGridLayout" name="gridLayout_2">
+         <item row="2" column="1" colspan="3">
+          <widget class="QComboBox" name="processProfileComboBox"/>
+         </item>
+         <item row="1" column="1">
+          <widget class="QComboBox" name="printerBrandComboBox"/>
+         </item>
+         <item row="1" column="3">
+          <widget class="QComboBox" name="nozzleComboBox"/>
+         </item>
          <item row="0" column="0">
           <widget class="QLabel" name="slicerLabel">
            <property name="text">
@@ -96,19 +105,17 @@
            </property>
           </widget>
          </item>
-         <item row="1" column="3">
-          <widget class="QComboBox" name="nozzleComboBox"/>
-         </item>
-         <item row="1" column="2">
-          <widget class="QComboBox" name="printerModelComboBox"/>
-         </item>
-         <item row="0" column="1" colspan="2">
-          <widget class="QComboBox" name="slicerComboBox"/>
-         </item>
          <item row="1" column="0">
           <widget class="QLabel" name="printerLabel">
            <property name="text">
             <string>Printer:</string>
+           </property>
+          </widget>
+         </item>
+         <item row="2" column="0">
+          <widget class="QLabel" name="processProfileLabel">
+           <property name="text">
+            <string>Process profile:</string>
            </property>
           </widget>
          </item>
@@ -119,18 +126,40 @@
            </property>
           </widget>
          </item>
-         <item row="1" column="1">
-          <widget class="QComboBox" name="printerBrandComboBox"/>
+         <item row="0" column="1" colspan="2">
+          <widget class="QComboBox" name="slicerComboBox"/>
          </item>
-         <item row="2" column="0">
-          <widget class="QLabel" name="processProfileLabel">
+         <item row="1" column="2">
+          <widget class="QComboBox" name="printerModelComboBox"/>
+         </item>
+         <item row="3" column="0" colspan="4">
+          <widget class="ctkCollapsibleButton" name="FilamentCollapsibleButton">
            <property name="text">
-            <string>Process profile:</string>
+            <string>Filament settings</string>
            </property>
+           <layout class="QGridLayout" name="gridLayout_5">
+            <item row="2" column="1">
+             <widget class="QComboBox" name="filamentTypeComboBox"/>
+            </item>
+            <item row="2" column="0">
+             <widget class="QLabel" name="filamentTypeLabel">
+              <property name="text">
+               <string>Filament type:</string>
+              </property>
+             </widget>
+            </item>
+            <item row="3" column="0">
+             <widget class="QLabel" name="filamentProfileLabel">
+              <property name="text">
+               <string>Filament profile:</string>
+              </property>
+             </widget>
+            </item>
+            <item row="3" column="1">
+             <widget class="QComboBox" name="filamentProfileComboBox"/>
+            </item>
+           </layout>
           </widget>
-         </item>
-         <item row="2" column="1" colspan="3">
-          <widget class="QComboBox" name="processProfileComboBox"/>
          </item>
         </layout>
        </widget>
