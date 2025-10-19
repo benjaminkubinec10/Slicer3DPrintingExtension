@@ -284,10 +284,19 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             machineFile = self.logic.findMachineProfile(self._parameterNode.printerBrand, self._parameterNode.printerModel, self._parameterNode.nozzleSize)
             self.logic.addG92E0ToGcode(machineFile)
             
-            filamentFile = "/Applications/OrcaSlicer.app/Contents/Resources/profiles/BBL/filament/Bambu PLA Aero @BBL A1.json"
+            filamentFile = self._parameterNode.filamentProfilePath
+            
+            changes = self.getFilamentValueChanges(filamentFile)
+            tempFilamentFile = self.logic.createTempFilamentProfile(filamentFile, changes)
+            
+            selectedFilamentFile = filamentFile
+            filamentFile = tempFilamentFile
+            
             processFile = self._parameterNode.processProfilePath
+            
             self.ui.logTextBox.append(f"Process profile selected: {processFile}")
             self.ui.logTextBox.append(f"Machine profile selected: {machineFile}")
+            self.ui.logTextBox.append(f"Filament profile selected: {filamentFile}")
             self.ui.logTextBox.append("")
             
             #command for slicer CLI
@@ -315,6 +324,10 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             self.ui.logTextBox.append(self._parameterNode.printerBrand)
             self.ui.logTextBox.append(self._parameterNode.printerModel)
             self.ui.logTextBox.append(self._parameterNode.nozzleSize)
+            
+            if tempFilamentFile != selectedFilamentFile and os.path.exists(tempFilamentFile):
+                if "Temp" in os.path.basename(tempFilamentFile):
+                    os.remove(tempFilamentFile)
            
            
     def onInputSegmentationChanged(self, newNode) -> None:
@@ -564,7 +577,29 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             self.ui.flowRatioLineEdit.setText(str(flowRatio[0]))
         if fanSpeed:
             self.ui.fanSpeedLineEdit.setText(str(fanSpeed[0]))
-                  
+            
+    def getFilamentValueChanges(self, filamentFilePath):
+        
+        changes = {}
+        
+        values = {
+            "nozzle_temperature": self.ui.nozzleTempLineEdit.text,
+            "nozzle_temperature_initial_layer": self.ui.initialNozzleTempLineEdit.text,
+            "hot_plate_temp": self.ui.bedTempLineEdit.text,
+            "hot_plate_temp_initial_layer": self.ui.initialBedTempLineEdit.text,
+            "filament_flow_ratio": self.ui.flowRatioLineEdit.text,
+            "fan_max_speed": self.ui.fanSpeedLineEdit.text
+        }
+        
+        for key, value in values.items():
+            if value:
+                if not value.strip():
+                    continue
+                origValue = self.logic.getFilamentProfileValues(filamentFilePath, key)
+                if origValue is None or not origValue or value != str(origValue[0]):
+                    changes[key] = value
+                    
+        return changes
 
 #
 # VoxelPrintAutoLogic
@@ -747,6 +782,41 @@ class VoxelPrintAutoLogic(ScriptedLoadableModuleLogic):
                 basePath = os.path.join(os.path.dirname(filamentFilePath), baseFile + ".json")
                 if os.path.exists(basePath):
                     return self.getFilamentProfileValues(basePath, key, visited)
+    
+    def createTempFilamentProfile(self, filamentFilePath, changes):
+        
+        if not changes:
+            return filamentFilePath
+        
+        try:
+            with open(filamentFilePath, "r", encoding="utf-8") as f:
+                baseData = json.load(f)
+        except Exception:
+            raise RuntimeError(f"Failed to load base filament profile: {filamentFilePath}")
+        
+        baseFilamentProfileName = baseData.get("name")
+        if not baseFilamentProfileName:
+            raise RuntimeError("Base filament profile name missing")
+        
+        baseDir = os.path.dirname(filamentFilePath)
+        tempFileName = f"{baseFilamentProfileName}Temp.json"
+        tempFilePath = os.path.join(baseDir, tempFileName)
+        
+        tempData = {
+            "type": "filament",
+            "name": f"Temp override of {baseFilamentProfileName}",
+            "inherits": baseFilamentProfileName,
+            "from": "user",
+            "instantiation": "true",
+        }
+        
+        for key, value in changes.items():
+            tempData[key] = [str(value)]
+        
+        with open(tempFilePath, "w", encoding="utf-8") as f:
+            json.dump(tempData, f, indent=2)
+        
+        return tempFilePath
         
 
 #
