@@ -1,31 +1,26 @@
-#-----------------------------------------------------------------------------
-set(MODULE_NAME VoxelPrintAuto)
+cmake_minimum_required(VERSION 3.16.3...3.19.7 FATAL_ERROR)
+
+project(VoxelPrintTools)
 
 #-----------------------------------------------------------------------------
-set(MODULE_PYTHON_SCRIPTS
-  ${MODULE_NAME}.py
-  )
-
-set(MODULE_PYTHON_RESOURCES
-  Resources/Icons/${MODULE_NAME}.png
-  Resources/UI/${MODULE_NAME}.ui
-  )
-
-#-----------------------------------------------------------------------------
-slicerMacroBuildScriptedModule(
-  NAME ${MODULE_NAME}
-  SCRIPTS ${MODULE_PYTHON_SCRIPTS}
-  RESOURCES ${MODULE_PYTHON_RESOURCES}
-  WITH_GENERIC_TESTS
-  )
+# Extension meta-information
+set(EXTENSION_HOMEPAGE "https://www.slicer.org/wiki/Documentation/Nightly/Extensions/VoxelPrintTools")
+set(EXTENSION_CONTRIBUTORS "John Doe (AnyWare Corp.)")
+set(EXTENSION_DESCRIPTION "This is an example of a simple extension")
+set(EXTENSION_ICONURL "https://www.example.com/Slicer/Extensions/VoxelPrintTools.png")
+set(EXTENSION_SCREENSHOTURLS "https://www.example.com/Slicer/Extensions/VoxelPrintTools/Screenshots/1.png")
+set(EXTENSION_DEPENDS "NA") # Specified as a list or "NA" if no dependencies
 
 #-----------------------------------------------------------------------------
-if(BUILD_TESTING)
+# Extension dependencies
+find_package(Slicer REQUIRED)
+include(${Slicer_USE_FILE})
 
-  # Register the unittest subclass in the main script as a ctest.
-  # Note that the test will also be available at runtime.
-  slicer_add_python_unittest(SCRIPT ${MODULE_NAME}.py)
+#-----------------------------------------------------------------------------
+# Extension modules
+add_subdirectory(VoxelPrintAuto)
+## NEXT_MODULE
 
-  # Additional build-time testing
-  add_subdirectory(Testing)
-endif()
+#-----------------------------------------------------------------------------
+include(${Slicer_EXTENSION_GENERATE_CONFIG})
+include(${Slicer_EXTENSION_CPACK})

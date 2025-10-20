@@ -228,6 +228,7 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             self.ui.generateGcodeButton.toolTip = _("Parameter node is not initialized")
             return
         
+        #checks if all necessary values for generating gcode are set
         inputReady = self._parameterNode.inputSegmentation is not None
         slicerReady = self._parameterNode.slicerPath and os.path.exists(self._parameterNode.slicerPath)
         outputReady = bool(self._parameterNode.outputFilePath) is not None
@@ -261,9 +262,11 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             outputPath = self._parameterNode.outputFilePath
             slicerPath = self._parameterNode.slicerPath #path to slicer CLI
             
+            #log slicer path used
             self.ui.logTextBox.append(f"Parameter node slicerPath: {self._parameterNode.slicerPath}")
             self.ui.logTextBox.append(f"os.path.exists(slicerPath) = {os.path.exists(self._parameterNode.slicerPath)}")
             
+            #raise errors if key values are missing
             if not inputSegmentation:
                 raise ValueError("No input segmentation selected.")
             if not outputPath:
@@ -278,22 +281,28 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             self.ui.logTextBox.append(f"Segment exported to temporary STL: {stlPath}")
             self.ui.logTextBox.append(f"Running external slicer CLI: {slicerPath}")
             
+            #get output directory and name
             outputDir = os.path.dirname(outputPath)
             outputFilename = os.path.basename(outputPath)
             
+            #prepare machine profile for gcode generation
             machineFile = self.logic.findMachineProfile(self._parameterNode.printerBrand, self._parameterNode.printerModel, self._parameterNode.nozzleSize)
             self.logic.addG92E0ToGcode(machineFile)
             
+            #get selected filament profile
             filamentFile = self._parameterNode.filamentProfilePath
             
+            #create temporary filament profile if user changes any values
             changes = self.getFilamentValueChanges(filamentFile)
             tempFilamentFile = self.logic.createTempFilamentProfile(filamentFile, changes)
             
             selectedFilamentFile = filamentFile
             filamentFile = tempFilamentFile
             
+            #get process profile
             processFile = self._parameterNode.processProfilePath
             
+            #log paths to all used profiles
             self.ui.logTextBox.append(f"Process profile selected: {processFile}")
             self.ui.logTextBox.append(f"Machine profile selected: {machineFile}")
             self.ui.logTextBox.append(f"Filament profile selected: {filamentFile}")
@@ -301,30 +310,31 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             
             #command for slicer CLI
             command = [
-                slicerPath,
-                "--arrange", "1",
-                "--orient", "1",
-                "--load-settings", f"{machineFile};{processFile}",
-                "--load-filaments", filamentFile,
-                "--slice", "0",
-                "--export-3mf", f"{outputDir}//{outputFilename}.3mf",
-                "--export-slicedata", outputDir,
-                "--info",
-                stlPath
+                slicerPath, #path to selected slicer client
+                "--arrange", "1", #spread objects on printer plate to avoid overlapping
+                "--orient", "1", #find best orientation and rotate object
+                "--load-settings", f"{machineFile};{processFile}", #load machine profile ad process profile
+                "--load-filaments", filamentFile, #load filament profile
+                "--slice", "0", #slice object without opening GUI
+                "--export-3mf", f"{outputDir}//{outputFilename}.3mf", #export to a .3mf file
+                "--export-slicedata", outputDir, #export slice details
+                "--info", #log info 
+                stlPath #path to stl of sliced object
             ]
             
             #run slicer
-            result = subprocess.run(command, capture_output=True, text=True)
+            result = subprocess.run(command, capture_output=True, text=True) #"command" needed commands to run slicer "capture_output=True" saves output logs instead of printing them out, "text=True" saves output as strings instead of bytes
             
             #show logs 
-            self.ui.logTextBox.append(result.stdout)
-            self.ui.logTextBox.append(result.stderr)
+            self.ui.logTextBox.append(result.stdout) #log standard output
+            self.ui.logTextBox.append(result.stderr) #log errors
             
             self.ui.logTextBox.append("G-Code generation finished.")
             self.ui.logTextBox.append(self._parameterNode.printerBrand)
             self.ui.logTextBox.append(self._parameterNode.printerModel)
             self.ui.logTextBox.append(self._parameterNode.nozzleSize)
             
+            #remove temporary filament profile after slicing
             if tempFilamentFile != selectedFilamentFile and os.path.exists(tempFilamentFile):
                 if "Temp" in os.path.basename(tempFilamentFile):
                     os.remove(tempFilamentFile)
@@ -366,7 +376,7 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self.ui.slicerComboBox.clear()
         
         if existingPaths:
-            #Shows "Bambu Studio" in combobox and saves path as itemData
+            #Shows "Orca Slicer" in combobox and saves path as itemData
             self.ui.slicerComboBox.addItem("Orca Slicer", existingPaths[0])
             #store default path to apply late if parameter node not ready yet
             self._defaultSlicerPath = existingPaths[0]
@@ -397,7 +407,7 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             "Executable files (*)"
         )
         
-        if isinstance(filePath, tuple):
+        if isinstance(filePath, tuple): #change filePath from tuple to string
             filePath = filePath[0]
         
         if filePath and filePath != "":
@@ -418,13 +428,16 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             self._checkCanApply()
             
     def onSlicerComboBoxChanged(self, index):
-        if index < 0:
+        if index < 0: #end function if slicer isn't selected
             return
         
         selectedPath = self.ui.slicerComboBox.itemData(index)
         
-        if isinstance(selectedPath, (list, tuple)):
-            selectedPath = selectedPath[0] if selectedPath else None
+        if isinstance(selectedPath, (list, tuple)): #make sure path is saved as string
+            if selectedPath:
+                selectedPath = selectedPath[0]
+            else:
+                selectedPath = None
             
         if selectedPath:
             if self._parameterNode:
@@ -442,7 +455,7 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         
         if printerBrand:
             if self._parameterNode:
-                self._parameterNode.printerBrand = printerBrand
+                self._parameterNode.printerBrand = printerBrand #save selected printer brand to parameter node
         
         modelComboBox = self.ui.printerModelComboBox 
         modelComboBox.blockSignals(True) 
@@ -453,6 +466,7 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             modelComboBox.setCurrentIndex(0)
         modelComboBox.blockSignals(False)
         
+        #update process profile and filament profile if printer brand changes
         self.updateProcessProfileComboBox(printerBrand, printerModel[0], nozzleSize)
         self.updateFilamentProfileComboBox(printerBrand, printerModel[0], nozzleSize, filamentType)
         
@@ -463,8 +477,9 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         filamentType = self.ui.filamentTypeComboBox.currentText
         
         if self._parameterNode:
-            self._parameterNode.printerModel = printerModel
-            
+            self._parameterNode.printerModel = printerModel #save selected printer model to parameter node
+        
+        #update process profile and filament profile if printer brand changes
         self.updateProcessProfileComboBox(printerBrand, printerModel, nozzleSize)
         self.updateFilamentProfileComboBox(printerBrand, printerModel, nozzleSize, filamentType)
         
@@ -476,12 +491,15 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         filamentType = self.ui.filamentTypeComboBox.currentText
         
         if self._parameterNode:
-            self._parameterNode.nozzleSize = nozzleSize
+            self._parameterNode.nozzleSize = nozzleSize #save selected nozzle size to parameter node
         
+        #update process profile and filament profile if printer brand changes
         self.updateProcessProfileComboBox(printerBrand, printerModel, nozzleSize)
         self.updateFilamentProfileComboBox(printerBrand, printerModel, nozzleSize, filamentType)
     
     def onProcessProfileComboBoxChanged(self, index) -> None:
+        #get path to newly selected process profile 
+        
         printerBrand = self.ui.printerBrandComboBox.currentText
         processProfile = self.ui.processProfileComboBox.currentText
         currentDir = os.path.dirname(__file__)
@@ -491,13 +509,14 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         
         processDir = os.path.join(currentDir, "Resources", "Profiles", printerBrandDir, "process")
         
-        
+        #save path to selected process profile to parameter node
         if self._parameterNode:
             processProfilePath = os.path.join(processDir, processProfile)
             if os.path.exists(processProfilePath):
                 self._parameterNode.processProfilePath = processProfilePath
                 
     def updateProcessProfileComboBox(self, printerBrand, printerModel, nozzleSize):
+        #changes selectable process profiles in combo box
         
         processProfile = self.logic.findProcessProfile(printerBrand, printerModel, nozzleSize)
         
@@ -521,14 +540,17 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             
         filamentDir = os.path.join(currentDir, "Resources", "Profiles", printerBrandDir, "filament")
         
+        #get path to selected filament profile
         if self._parameterNode:
             filamentProfilePath = os.path.join(filamentDir, filamentProfile)
             if os.path.exists(filamentProfilePath):
-                self._parameterNode.filamentProfilePath = filamentProfilePath
-                
+                self._parameterNode.filamentProfilePath = filamentProfilePath #save filament profile path to parameter node
+        
+        #get values from newly selected filament profile   
         self.loadFilamentValues()
         
     def updateFilamentProfileComboBox(self, printerBrand, printerModel, nozzleSize, filamentType) -> None:
+        #changes selectable filament profiles in combo box
         
         filamentProfile = self.logic.findFilamentProfile(printerBrand, printerModel, nozzleSize, filamentType)
         
@@ -549,36 +571,34 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         filamentType = self.ui.filamentTypeComboBox.currentText
         
         if self._parameterNode:
-            self._parameterNode.filamentType = filamentType
+            self._parameterNode.filamentType = filamentType #save filament type to parameter node
 
-        self.updateFilamentProfileComboBox(printerBrand, printerModel, nozzleSize, filamentType)
+        self.updateFilamentProfileComboBox(printerBrand, printerModel, nozzleSize, filamentType) #update filament profiles if filament type changes
         
     def loadFilamentValues(self):
+        #add original values from selected filament profile to GUI
+        
         filamentFilePath = self._parameterNode.filamentProfilePath
         if not filamentFilePath:
             return
         
-        nozzleTemp = self.logic.getFilamentProfileValues(filamentFilePath, "nozzle_temperature")
-        nozzleTempInitial = self.logic.getFilamentProfileValues(filamentFilePath, "nozzle_temperature_initial_layer")
-        bedTemp = self.logic.getFilamentProfileValues(filamentFilePath, "hot_plate_temp")
-        bedTempInitial = self.logic.getFilamentProfileValues(filamentFilePath, "hot_plate_temp_initial_layer")
-        flowRatio = self.logic.getFilamentProfileValues(filamentFilePath, "filament_flow_ratio")
-        fanSpeed = self.logic.getFilamentProfileValues(filamentFilePath, "fan_max_speed")
+        values = {
+            "nozzle_temperature": self.ui.nozzleTempLineEdit,
+            "nozzle_temperature_initial_layer": self.ui.initialNozzleTempLineEdit,
+            "hot_plate_temp": self.ui.bedTempLineEdit,
+            "hot_plate_temp_initial_layer": self.ui.initialBedTempLineEdit,
+            "filament_flow_ratio": self.ui.flowRatioLineEdit,
+            "fan_max_speed": self.ui.fanSpeedLineEdit
+        }
         
-        if nozzleTemp:
-            self.ui.nozzleTempLineEdit.setText(str(nozzleTemp[0]))
-        if nozzleTempInitial:
-            self.ui.initialNozzleTempLineEdit.setText(str(nozzleTempInitial[0]))
-        if bedTemp:
-            self.ui.bedTempLineEdit.setText(str(bedTemp[0]))
-        if bedTempInitial:
-            self.ui.initialBedTempLineEdit.setText(str(bedTempInitial[0]))
-        if flowRatio:
-            self.ui.flowRatioLineEdit.setText(str(flowRatio[0]))
-        if fanSpeed:
-            self.ui.fanSpeedLineEdit.setText(str(fanSpeed[0]))
+        #get desired values
+        for key, lineEdit in values.items():
+            value = self.logic.getFilamentProfileValues(filamentFilePath, key)
+            if value:
+                lineEdit.setText(str(value[0])) #if found add values to GUI
             
     def getFilamentValueChanges(self, filamentFilePath):
+        #look for changed values in filament profile
         
         changes = {}
         
@@ -589,15 +609,15 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             "hot_plate_temp_initial_layer": self.ui.initialBedTempLineEdit.text,
             "filament_flow_ratio": self.ui.flowRatioLineEdit.text,
             "fan_max_speed": self.ui.fanSpeedLineEdit.text
-        }
+        } #changable values
         
         for key, value in values.items():
             if value:
-                if not value.strip():
+                if not value.strip(): #prevents changing value to an empty string 
                     continue
                 origValue = self.logic.getFilamentProfileValues(filamentFilePath, key)
-                if origValue is None or not origValue or value != str(origValue[0]):
-                    changes[key] = value
+                if origValue is None or not origValue or value != str(origValue[0]): 
+                    changes[key] = value #get value if changed
                     
         return changes
 
@@ -635,9 +655,9 @@ class VoxelPrintAutoLogic(ScriptedLoadableModuleLogic):
         stlFileName = f"{segmentationNode.GetName()}.stl"
         stlPath = os.path.join(tempDir, stlFileName)
         
-        segmentation = segmentationNode.GetSegmentation()
-        segmentIDs = vtk.vtkStringArray()
-        segmentation.GetSegmentIDs(segmentIDs)
+        segmentation = segmentationNode.GetSegmentation() #get available segmentation
+        segmentIDs = vtk.vtkStringArray() #creates an empty array of strings
+        segmentation.GetSegmentIDs(segmentIDs) #fill array with ID of available segmentation
         
         #export to one stl file
         success = slicer.modules.segmentations.logic().ExportSegmentsClosedSurfaceRepresentationToFiles(
@@ -667,6 +687,7 @@ class VoxelPrintAutoLogic(ScriptedLoadableModuleLogic):
         return stlPath
     
     def findProcessProfile(self, printerBrand, printerModel, nozzle):
+        #find process profiles compatible with selected printers 
         currentDir = os.path.dirname(__file__)
         
         if printerBrand == "Bambu Lab":
@@ -679,19 +700,20 @@ class VoxelPrintAutoLogic(ScriptedLoadableModuleLogic):
         
         compatibleProfiles = []
         
+        #change printer model names based on process profile file names
         if printerModel == "P1S" or printerModel == "X1 Carbon" or printerModel == "X1E" or printerModel == "X1":
             printerModel = "X1C"
         elif printerModel == "A1 mini":
             printerModel = "A1M"
         
-        printerModelRegex = rf"{re.escape(printerModel)}(?![A-Za-z0-9])"
+        printerModelRegex = rf"{re.escape(printerModel)}(?![A-Za-z0-9])" #regex to avoid confusion of A1 with A1 Mini
         
         for filename in os.listdir(processDir):
             if filename.endswith(".json"):
                 if re.search(printerModelRegex, filename):
                     if nozzle == "0.4 nozzle":
-                        if "nozzle" not in filename.lower():
-                            compatibleProfiles.append(filename)
+                        if "nozzle" not in filename.lower(): 
+                            compatibleProfiles.append(filename) #0.4 nozzle size isn't mentioned in file names
                     else:
                         if nozzle in filename.lower():
                             compatibleProfiles.append(filename)
@@ -699,18 +721,21 @@ class VoxelPrintAutoLogic(ScriptedLoadableModuleLogic):
         return compatibleProfiles
     
     def findMachineProfile(self, printerBrand, printerModel, nozzle):
-        currentDir = os.path.dirname(__file__)
         
-        if printerBrand == "Bambu Lab":
+        #find machine profile json file compatible with selected printed
+        currentDir = os.path.dirname(__file__) #extension directory
+        
+        if printerBrand == "Bambu Lab": 
             printerBrandDir = "BBL"
                 
-        machineDir = os.path.join(currentDir, "Resources", "Profiles", printerBrandDir, "machine")
+        machineDir = os.path.join(currentDir, "Resources", "Profiles", printerBrandDir, "machine") 
         
         if not os.path.exists(machineDir):
             return []
         
-        printerModelRegex = rf"{re.escape(printerModel)}($| \d)"
+        printerModelRegex = rf"{re.escape(printerModel)}($| \d)" #regex filter to avoid A1 Mini profile passing when A1 printer is selected
         
+        #find json files for selected printer model and nozzle size
         for filename in os.listdir(machineDir):
             if filename.endswith(".json"):
                 if re.search(printerModelRegex, filename):
@@ -718,20 +743,23 @@ class VoxelPrintAutoLogic(ScriptedLoadableModuleLogic):
                         machineProfile = filename
                         
         machineProfilePath = os.path.join(machineDir, machineProfile)
-        print(machineProfilePath)
         
         return machineProfilePath
     
     def addG92E0ToGcode(self, jsonPath) -> None:
-        with open(jsonPath, "r", encoding="utf-8") as f:
-            data = json.load(f)
+        #adds "G92 E0 ; zero the extruder" before changing layers
+        
+        with open(jsonPath, "r", encoding="utf-8") as f: 
+            data = json.load(f) #load data from json file
             
-        data["before_layer_change_gcode"] = "G92 E0 ; zero the extruder"
+        data["before_layer_change_gcode"] = "G92 E0 ; zero the extruder" 
         
         with open(jsonPath, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+            json.dump(data, f, ensure_ascii=False, indent=2) #rewrite json file
             
     def findFilamentProfile(self, printerBrand, printerModel, nozzleSize, filamentType):
+        
+        #find filament profiles compatible with selected printer and type of filament
         currentDir = os.path.dirname(__file__)
         
         if printerBrand == "Bambu Lab":
@@ -748,20 +776,22 @@ class VoxelPrintAutoLogic(ScriptedLoadableModuleLogic):
         
         for filename in os.listdir(filamentDir):
             if filename.endswith(".json") and filamentType in filename:
-                filePath = os.path.join(filamentDir, filename)
+                filePath = os.path.join(filamentDir, filename) #find filament profiles for selected material
                 try:
                     with open(filePath, "r", encoding="utf-8") as f:
-                        data = json.load(f)
+                        data = json.load(f) #load data from json file
                 except Exception:
                     continue
                 
                 if fullPrinterName in data.get("compatible_printers", []):
-                    compatibleProfile.append(filename)
+                    compatibleProfile.append(filename) #find filamet profiles compatible with selected printer
         
         return compatibleProfile
     
     def getFilamentProfileValues(self, filamentFilePath, key, visited=None):
-        if visited is None:
+        #load key values from selected filament profile
+        
+        if visited is None: #prevent infinite recursion
             visited = set()
         
         if filamentFilePath in visited:
@@ -770,37 +800,38 @@ class VoxelPrintAutoLogic(ScriptedLoadableModuleLogic):
         
         try:
             with open(filamentFilePath, "r", encoding="utf-8") as f:
-                data = json.load(f)
+                data = json.load(f) #load data from json file
         except Exception:
             return None
         
         if key in data:
-            return data[key]
+            return data[key] #get wanted value 
         else:
             if "inherits" in data:
                 baseFile = data["inherits"]
                 basePath = os.path.join(os.path.dirname(filamentFilePath), baseFile + ".json")
                 if os.path.exists(basePath):
-                    return self.getFilamentProfileValues(basePath, key, visited)
+                    return self.getFilamentProfileValues(basePath, key, visited) #look for wanted value in inherited json file
     
     def createTempFilamentProfile(self, filamentFilePath, changes):
+        #create a new filament profile if user changes any values
         
         if not changes:
             return filamentFilePath
         
         try:
             with open(filamentFilePath, "r", encoding="utf-8") as f:
-                baseData = json.load(f)
+                baseData = json.load(f) #load data from selected filament profile
         except Exception:
             raise RuntimeError(f"Failed to load base filament profile: {filamentFilePath}")
         
-        baseFilamentProfileName = baseData.get("name")
+        baseFilamentProfileName = baseData.get("name") #get name of the selected filament profile
         if not baseFilamentProfileName:
             raise RuntimeError("Base filament profile name missing")
         
         baseDir = os.path.dirname(filamentFilePath)
         tempFileName = f"{baseFilamentProfileName}Temp.json"
-        tempFilePath = os.path.join(baseDir, tempFileName)
+        tempFilePath = os.path.join(baseDir, tempFileName) #create new filament profile 
         
         tempData = {
             "type": "filament",
@@ -808,13 +839,13 @@ class VoxelPrintAutoLogic(ScriptedLoadableModuleLogic):
             "inherits": baseFilamentProfileName,
             "from": "user",
             "instantiation": "true",
-        }
+        } #data needed in new filament profile 
         
         for key, value in changes.items():
-            tempData[key] = [str(value)]
+            tempData[key] = [str(value)] #changed values
         
         with open(tempFilePath, "w", encoding="utf-8") as f:
-            json.dump(tempData, f, indent=2)
+            json.dump(tempData, f, indent=2) #write data to new filament profile
         
         return tempFilePath
         
