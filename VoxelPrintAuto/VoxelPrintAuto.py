@@ -57,6 +57,10 @@ class VoxelPrintAutoParameterNode:
     processProfilePath: str = "" #path of process profile
     filamentProfilePath: str = ""
     filamentType: str = ""
+    supportType: str = ""
+    supportStyle: str = ""
+    supportsEnabled: bool = False
+    buildPlateOnly: bool = False
 
 
 #
@@ -136,6 +140,22 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         self.setupSlicerComboBox()
         self.ui.slicerComboBox.connect("currentIndexChanged(int)", self.onSlicerComboBoxChanged)
         
+        #setup support settings widgets
+        self.supports = {
+            "Normal(auto)": ["Default", "Grid", "Snug"],
+            "Tree(auto)": ["Default", "Organic", "Tree Slim", "Tree Strong", "Tree Hybrid"]
+        }
+        supportType = list(self.supports.keys())
+        self.ui.supportTypeComboBox.addItems(supportType)
+        self.ui.supportTypeComboBox.setCurrentIndex(0)
+        
+        self.ui.supportTypeComboBox.connect("currentIndexChanged(int)", self.onSupportTypeComboBoxChanged)
+        
+        self.onSupportTypeComboBoxChanged(0)
+        
+        self.ui.supportCheckBox.connect("toggled(bool)", self.onSupportsToggled)
+        self.ui.buildPlateOnlyCheckBox.connect("toggled(bool)", self.onBuildPlateOnlyToggled)
+        
         #Initialize parameter node
         self.initializeParameterNode()
         
@@ -193,6 +213,10 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             self._parameterNode.nozzleSize = self.ui.nozzleComboBox.currentText
         if not self._parameterNode.filamentType:
             self._parameterNode.filamentType = self.ui.filamentTypeComboBox.currentText
+        if not self._parameterNode.supportStyle:
+            self._parameterNode.supportStyle = self.ui.supportStyleComboBox.currentText
+        if not self._parameterNode.supportType:
+            self._parameterNode.supportType = self.ui.supportTypeComboBox.currentText
             
         printerBrand = self._parameterNode.printerBrand
         printerModel = self._parameterNode.printerModel
@@ -301,6 +325,10 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             
             #get process profile
             processFile = self._parameterNode.processProfilePath
+            
+            #create temporary process profile
+            tempProcessProfile = self.logic.createTempProcessProfile(processFile, self._parameterNode.supportsEnabled, self._parameterNode.buildPlateOnly, self._parameterNode.supportType, self._parameterNode.supportStyle)
+            processFile = tempProcessProfile
             
             #log paths to all used profiles
             self.ui.logTextBox.append(f"Process profile selected: {processFile}")
@@ -621,6 +649,33 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
                     
         return changes
 
+    def onSupportTypeComboBoxChanged(self, index) -> None:
+        #get new value selected in support type combobox
+        supportType = self.ui.supportTypeComboBox.currentText
+        supportStyle = self.supports.get(supportType, []) #get support styles for selected support type
+        
+        if supportType:
+            if self._parameterNode:
+                self._parameterNode.supportType = supportType
+                
+        styleComboBox = self.ui.supportStyleComboBox
+        styleComboBox.blockSignals(True) 
+        styleComboBox.clear() #clear combo box
+        styleComboBox.addItems(supportStyle) #add support styles to combobox
+        
+        if supportStyle:
+            styleComboBox.setCurrentIndex(0)
+        styleComboBox.blockSignals(False)
+        
+    def onSupportsToggled(self, checked) -> None:
+        self._parameterNode.supportsEnabled = checked
+        self.ui.logTextBox.append(f"Supports Enabled: {self._parameterNode.supportsEnabled}")
+        
+    def onBuildPlateOnlyToggled(self, checked) -> None:
+        self._parameterNode.buildPlateOnly = checked
+        self.ui.logTextBox.append(f"Supports on build plate only: {self._parameterNode.buildPlateOnly}")
+            
+        
 #
 # VoxelPrintAutoLogic
 #
@@ -846,6 +901,44 @@ class VoxelPrintAutoLogic(ScriptedLoadableModuleLogic):
         
         with open(tempFilePath, "w", encoding="utf-8") as f:
             json.dump(tempData, f, indent=2) #write data to new filament profile
+        
+        return tempFilePath
+    
+    def createTempProcessProfile(self, processFilePath, supportsEnabled, buildPlateOnly, supportType, supportStyle):
+        #create a new filament profile if user changes any values
+        
+        try:
+            with open(processFilePath, "r", encoding="utf-8") as f:
+                baseData = json.load(f) #load data from selected process profile
+        except Exception:
+            raise RuntimeError(f"Failed to load base filament profile: {processFilePath}")
+        
+        baseProcessProfileName = baseData.get("name") #get name of the selected process profile
+        if not baseProcessProfileName:
+            raise RuntimeError("Base filament profile name missing")
+        
+        baseDir = os.path.dirname(processFilePath)
+        tempFileName = f"{os.path.splitext(os.path.basename(processFilePath))[0]}Temp.json"
+        tempFilePath = os.path.join(baseDir, tempFileName) #create new process profile 
+        
+        supportType = supportType.replace(" ", "_").lower() #get compatible values for json file
+        supportStyle = supportStyle.replace(" ", "_").lower()
+        
+        tempData = {
+            "type": "process",
+            "name": f"Temp override of {baseProcessProfileName}",
+            "inherits": baseProcessProfileName,
+            "from": "user",
+            "instantiation": "true",
+            "enable_support": str(int(supportsEnabled)),
+            "support_on_build_plate_only": str(int(buildPlateOnly)),
+            "support_type": supportType,
+            "support_style": supportStyle,
+            "compatible_printers": baseData.get("compatible_printers")
+        } #data needed in new process profile 
+        
+        with open(tempFilePath, "w", encoding="utf-8") as f:
+            json.dump(tempData, f, indent=2) #write data to new process profile
         
         return tempFilePath
         

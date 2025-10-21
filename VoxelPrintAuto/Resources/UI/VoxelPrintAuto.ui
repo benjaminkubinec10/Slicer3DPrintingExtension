@@ -6,7 +6,7 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>646</width>
+    <width>561</width>
     <height>778</height>
    </rect>
   </property>
@@ -230,12 +230,46 @@
          <string>Print Settings</string>
         </property>
         <layout class="QGridLayout" name="gridLayout_3">
-         <item row="1" column="3">
-          <widget class="ctkCollapsibleButton" name="CollapsibleButton">
+         <item row="1" column="0">
+          <widget class="ctkCollapsibleButton" name="supportSettingsCollapsibleButton">
            <property name="text">
             <string>Supports</string>
            </property>
            <layout class="QGridLayout" name="gridLayout_4">
+            <item row="0" column="2">
+             <widget class="QLabel" name="buildPlateOnlyLabel">
+              <property name="text">
+               <string>On build plate only:</string>
+              </property>
+             </widget>
+            </item>
+            <item row="0" column="1">
+             <widget class="QCheckBox" name="supportCheckBox">
+              <property name="text">
+               <string/>
+              </property>
+             </widget>
+            </item>
+            <item row="0" column="4">
+             <widget class="QCheckBox" name="buildPlateOnlyCheckBox">
+              <property name="text">
+               <string/>
+              </property>
+             </widget>
+            </item>
+            <item row="1" column="4">
+             <widget class="QComboBox" name="supportStyleComboBox"/>
+            </item>
+            <item row="1" column="1">
+             <widget class="QComboBox" name="supportTypeComboBox"/>
+            </item>
+            <item row="1" column="0">
+             <widget class="QLabel" name="supportTypeLabel">
+              <property name="text">
+               <string>Support type:</string>
+              </property>
+             </widget>
+            </item>
             <item row="0" column="0">
              <widget class="QLabel" name="supportLabel">
               <property name="text">
@@ -243,58 +277,12 @@
               </property>
              </widget>
             </item>
-            <item row="0" column="2">
-             <widget class="QLabel" name="supportTypeLabel">
-              <property name="text">
-               <string>Support type:</string>
-              </property>
-             </widget>
-            </item>
-            <item row="0" column="3">
-             <widget class="QComboBox" name="supportTypeComboBox"/>
-            </item>
-            <item row="0" column="1">
-             <widget class="QComboBox" name="supportComboBox"/>
-            </item>
-            <item row="1" column="1">
-             <widget class="QComboBox" name="comboBox"/>
-            </item>
-            <item row="1" column="0">
-             <widget class="QLabel" name="label">
-              <property name="text">
-               <string>Support pattern:</string>
-              </property>
-             </widget>
-            </item>
-            <item row="2" column="0">
-             <widget class="QLabel" name="supportDensityLabel">
-              <property name="text">
-               <string>Support density:</string>
-              </property>
-             </widget>
-            </item>
-            <item row="2" column="1">
-             <widget class="QLineEdit" name="supportDensityLineEdit"/>
-            </item>
-            <item row="2" column="2">
-             <widget class="QLabel" name="overhangAngleLabel">
-              <property name="text">
-               <string>Support overhang angle:</string>
-              </property>
-             </widget>
-            </item>
-            <item row="2" column="3">
-             <widget class="QLineEdit" name="overhangAngle"/>
-            </item>
             <item row="1" column="2">
-             <widget class="QLabel" name="label_2">
+             <widget class="QLabel" name="supportStyleLabel">
               <property name="text">
-               <string>TextLabel</string>
+               <string>Support style:</string>
               </property>
              </widget>
-            </item>
-            <item row="1" column="3">
-             <widget class="QComboBox" name="comboBox_2"/>
             </item>
            </layout>
           </widget>
