@@ -5,6 +5,7 @@ import tempfile
 import subprocess
 import json
 import re
+import platform
 
 from qt import QFileDialog
 import vtk
@@ -325,6 +326,7 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             
             #get process profile
             processFile = self._parameterNode.processProfilePath
+            selectedProcessFile = processFile
             
             #create temporary process profile
             tempProcessProfile = self.logic.createTempProcessProfile(processFile, self._parameterNode.supportsEnabled, self._parameterNode.buildPlateOnly, self._parameterNode.supportType, self._parameterNode.supportStyle)
@@ -344,7 +346,7 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
                 "--load-settings", f"{machineFile};{processFile}", #load machine profile ad process profile
                 "--load-filaments", filamentFile, #load filament profile
                 "--slice", "0", #slice object without opening GUI
-                "--export-3mf", f"{outputDir}//{outputFilename}.3mf", #export to a .3mf file
+                "--export-3mf", os.path.join(outputDir, f"{outputFilename}.3mf"), #export to a .3mf file
                 "--export-slicedata", outputDir, #export slice details
                 "--info", #log info 
                 stlPath #path to stl of sliced object
@@ -366,6 +368,10 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             if tempFilamentFile != selectedFilamentFile and os.path.exists(tempFilamentFile):
                 if "Temp" in os.path.basename(tempFilamentFile):
                     os.remove(tempFilamentFile)
+
+            if tempProcessProfile != selectedProcessFile and os.path.exists(tempProcessProfile):
+                if "Temp" in os.path.basename(tempProcessProfile):
+                    os.remove(tempProcessProfile)
            
            
     def onInputSegmentationChanged(self, newNode) -> None:
@@ -391,7 +397,14 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
     def setupSlicerComboBox(self) -> None:
         #expected path
         defaultPaths = []
-        defaultPaths.append("/Applications/OrcaSlicer.app/Contents/MacOS/OrcaSlicer")
+        
+        system = platform.system() #get users system platform
+        
+        if system == "Darwin":
+            defaultPaths.append("/Applications/OrcaSlicer.app/Contents/MacOS/OrcaSlicer") #default path for OrcaSlicer on Mac
+        elif system == "Windows":
+            defaultPaths.extend([r"C:\Program Files\OrcaSlicer\orca-slicer.exe",
+                                 r"C:\Program Files\OrcaSlicer\OrcaSlicer.exe"]) #default path for OrcaSlicer on Windows
         
         #check if path exists
         existingPaths = []
@@ -432,7 +445,7 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             None, 
             "Select Slicer",
             "",
-            "Executable files (*)"
+            "Executable files (*.exe *.app)" #only see executable files
         )
         
         if isinstance(filePath, tuple): #change filePath from tuple to string
@@ -934,7 +947,7 @@ class VoxelPrintAutoLogic(ScriptedLoadableModuleLogic):
             "support_on_build_plate_only": str(int(buildPlateOnly)),
             "support_type": supportType,
             "support_style": supportStyle,
-            "compatible_printers": baseData.get("compatible_printers")
+            "compatible_printers": baseData.get("compatible_printers") #get compatible printers from original json file
         } #data needed in new process profile 
         
         with open(tempFilePath, "w", encoding="utf-8") as f:
