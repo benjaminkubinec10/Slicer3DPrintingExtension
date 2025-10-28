@@ -20,7 +20,7 @@
       <item row="0" column="0">
        <widget class="QLabel" name="inputLabel">
         <property name="text">
-         <string>Input Volume:</string>
+         <string>Input Segmentation:</string>
         </property>
        </widget>
       </item>
@@ -54,7 +54,7 @@
    <item>
     <widget class="ctkCollapsibleButton" name="outputCollapsibleButton">
      <property name="text">
-      <string>Output Settings</string>
+      <string>Output</string>
      </property>
      <layout class="QGridLayout" name="gridLayout">
       <item row="0" column="2">

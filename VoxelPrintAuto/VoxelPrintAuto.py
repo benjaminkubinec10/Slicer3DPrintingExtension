@@ -112,8 +112,26 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         
         #Setup printer selection combo box
         self.printers = {
-            "Bambu Lab": ["A1", "X1 Carbon", "P1S"]
+            "Bambu Lab": ["A1", "X1 Carbon", "P1S","A1 mini","X1E", "X1"],
+            "Prusa": ["CORE One", "CORE One HF", "MK3S", "MK3.5", "MK4", "MK4S", "MK4S HF", "XL", "XL 5T", "MINI", "MINIIS"]
         }
+        
+        self.nozzleBambu = ["0.2 nozzle", "0.4 nozzle", "0.6 nozzle", "0.8 nozzle"]
+        
+        self.nozzlePrusa = {
+            "CORE One": ["0.25 nozzle", "0.3 nozzle", "0.4 nozzle", "0.5 nozzle", "0.6 nozzle", "0.8 nozzle"],
+            "CORE One HF": ["0.4 nozzle", "0.5 nozzle", "0.6 nozzle", "0.8 nozzle"],
+            "MK3S": ["0.25 nozzle", "0.4 nozzle", "0.6 nozzle", "0.8 nozzle"],
+            "MK3.5": ["0.25 nozzle", "0.4 nozzle", "0.6 nozzle", "0.8 nozzle"],
+            "MK4S": ["0.25 nozzle", "0.3 nozzle", "0.4 nozzle", "0.5 nozzle", "0.6 nozzle", "0.8 nozzle"],
+            "MK4S HF": ["0.4 nozzle", "0.5 nozzle", "0.6 nozzle", "0.8 nozzle"],
+            "MK4": ["0.25 nozzle", "0.4 nozzle", "0.6 nozzle", "0.8 nozzle"],
+            "XL": ["0.25 nozzle", "0.3 nozzle", "0.4 nozzle", "0.5 nozzle", "0.6 nozzle", "0.8 nozzle"],
+            "XL 5T": ["0.25 nozzle", "0.3 nozzle", "0.4 nozzle", "0.5 nozzle", "0.6 nozzle", "0.8 nozzle"],
+            "MINI": ["0.25 nozzle", "0.4 nozzle", "0.6 nozzle", "0.8 nozzle"],
+            "MINIIS": ["0.25 nozzle", "0.4 nozzle", "0.6 nozzle", "0.8 nozzle"]
+        }
+        
         brands = list(self.printers.keys())
         self.ui.printerBrandComboBox.addItems(brands)
         self.ui.printerBrandComboBox.setCurrentIndex(0)
@@ -123,8 +141,7 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         
         self.onPrinterBrandComboBoxChanged(0)
         
-        self.nozzle = ["0.2 nozzle", "0.4 nozzle", "0.6 nozzle", "0.8 nozzle"]
-        self.ui.nozzleComboBox.addItems(self.nozzle)
+        self.ui.nozzleComboBox.addItems(self.nozzleBambu)
         self.ui.nozzleComboBox.setCurrentIndex(1)
         self.ui.nozzleComboBox.connect("currentIndexChanged(int)", self.onNozzleComboBoxChanged)
         
@@ -510,6 +527,7 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         #update process profile and filament profile if printer brand changes
         self.updateProcessProfileComboBox(printerBrand, printerModel[0], nozzleSize)
         self.updateFilamentProfileComboBox(printerBrand, printerModel[0], nozzleSize, filamentType)
+        self.updateNozzleComboBox(printerBrand, printerModel)
         
     def onPrinterModelComboBoxChanged(self, index) -> None:
         printerModel = self.ui.printerModelComboBox.currentText
@@ -523,6 +541,7 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         #update process profile and filament profile if printer brand changes
         self.updateProcessProfileComboBox(printerBrand, printerModel, nozzleSize)
         self.updateFilamentProfileComboBox(printerBrand, printerModel, nozzleSize, filamentType)
+        self.updateNozzleComboBox(printerBrand, printerModel)
         
     
     def onNozzleComboBoxChanged(self, index) -> None:
@@ -548,6 +567,9 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         if printerBrand == "Bambu Lab":
             printerBrandDir = "BBL"
         
+        else:
+            printerBrandDir = printerBrand
+        
         processDir = os.path.join(currentDir, "Resources", "Profiles", printerBrandDir, "process")
         
         #save path to selected process profile to parameter node
@@ -555,6 +577,16 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
             processProfilePath = os.path.join(processDir, processProfile)
             if os.path.exists(processProfilePath):
                 self._parameterNode.processProfilePath = processProfilePath
+                
+    def updateNozzleComboBox(self, printerBrand, printerModel):
+        
+        self.ui.nozzleComboBox.clear()
+        
+        if printerBrand == "Bambu Lab":
+            self.ui.nozzleComboBox.addItems(self.nozzleBambu)
+        
+        elif printerBrand == "Prusa":
+            self.ui.nozzleComboBox.addItems(self.nozzlePrusa[printerModel])
                 
     def updateProcessProfileComboBox(self, printerBrand, printerModel, nozzleSize):
         #changes selectable process profiles in combo box
@@ -578,6 +610,9 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
         
         if printerBrand == "Bambu Lab":
             printerBrandDir = "BBL"
+        
+        else: 
+            printerBrandDir = printerBrand
             
         filamentDir = os.path.join(currentDir, "Resources", "Profiles", printerBrandDir, "filament")
         
@@ -760,33 +795,47 @@ class VoxelPrintAutoLogic(ScriptedLoadableModuleLogic):
         
         if printerBrand == "Bambu Lab":
             printerBrandDir = "BBL"
+        
+        else:
+            printerBrandDir = printerBrand
                 
         processDir = os.path.join(currentDir, "Resources", "Profiles", printerBrandDir, "process")
         
         if not os.path.exists(processDir):
             return []
+            
+        compatibleProfile = []
         
-        compatibleProfiles = []
-        
-        #change printer model names based on process profile file names
-        if printerModel == "P1S" or printerModel == "X1 Carbon" or printerModel == "X1E" or printerModel == "X1":
-            printerModel = "X1C"
-        elif printerModel == "A1 mini":
-            printerModel = "A1M"
-        
-        printerModelRegex = rf"{re.escape(printerModel)}(?![A-Za-z0-9])" #regex to avoid confusion of A1 with A1 Mini
+        fullPrinterName = f"{printerBrand} {printerModel} {nozzle}"
         
         for filename in os.listdir(processDir):
             if filename.endswith(".json"):
-                if re.search(printerModelRegex, filename):
-                    if nozzle == "0.4 nozzle":
-                        if "nozzle" not in filename.lower(): 
-                            compatibleProfiles.append(filename) #0.4 nozzle size isn't mentioned in file names
-                    else:
+                filePath = os.path.join(processDir, filename)
+                try:
+                    with open(filePath, "r", encoding="utf-8") as f:
+                        data = json.load(f) #load data from json file
+                except Exception:
+                    continue
+                
+                if fullPrinterName in data.get("compatible_printers", []):
+                    compatibleProfile.append(filename) #find filamet profiles compatible with selected printer
+                    
+        if compatibleProfile == []:
+            printerModelRegex = rf"{re.escape(printerModel)}(?![A-Za-z0-9])"
+            nozzleNumber = nozzle.replace(" nozzle", "")
+            nozzleNumberRegex = rf"{re.escape(nozzleNumber)}(?![A-Za-z0-9])"
+            
+            for filename in os.listdir(processDir):
+                if filename.endswith(".json"):
+                    if re.search(printerModelRegex, filename):
                         if nozzle in filename.lower():
-                            compatibleProfiles.append(filename)
-        
-        return compatibleProfiles
+                            compatibleProfile.append(filename)
+                        elif re.search(nozzleNumberRegex, filename):
+                            compatibleProfile.append(filename)
+                    elif re.search(rf"HF{nozzleNumberRegex}", filename):
+                        compatibleProfile.append(filename)
+                        
+        return compatibleProfile
     
     def findMachineProfile(self, printerBrand, printerModel, nozzle):
         
@@ -795,6 +844,9 @@ class VoxelPrintAutoLogic(ScriptedLoadableModuleLogic):
         
         if printerBrand == "Bambu Lab": 
             printerBrandDir = "BBL"
+        
+        else:
+            printerBrandDir = printerBrand
                 
         machineDir = os.path.join(currentDir, "Resources", "Profiles", printerBrandDir, "machine") 
         
@@ -832,6 +884,9 @@ class VoxelPrintAutoLogic(ScriptedLoadableModuleLogic):
         
         if printerBrand == "Bambu Lab":
             printerBrandDir = "BBL"
+        
+        else:
+            printerBrandDir = printerBrand
             
         filamentDir = os.path.join(currentDir, "Resources", "Profiles", printerBrandDir, "filament")
         
