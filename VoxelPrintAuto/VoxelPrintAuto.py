@@ -391,10 +391,10 @@ class VoxelPrintAutoWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
                     os.remove(tempProcessProfile)
            
            
-    def onInputSegmentationChanged(self, newNode) -> None:
+    def onInputSegmentationChanged(self, newSegmentation) -> None:
         #update current selected input node
         if self._parameterNode:
-            self._parameterNode.inputSegmentation = newNode
+            self._parameterNode.inputSegmentation = newSegmentation
 
     def onBrowseOutputPath(self) -> None:
         #open file dialog

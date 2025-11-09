@@ -19,6 +19,7 @@ include(${Slicer_USE_FILE})
 #-----------------------------------------------------------------------------
 # Extension modules
 add_subdirectory(VoxelPrintAuto)
+add_subdirectory(AutoImplant)
 ## NEXT_MODULE
 
 #-----------------------------------------------------------------------------
